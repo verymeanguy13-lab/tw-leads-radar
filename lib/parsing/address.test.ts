@@ -1,0 +1,35 @@
+import { parseAddress } from "./address";
+
+const TEST_ADDRESSES: string[] = [
+  "\u6843\u5712\u5e02\u5927\u5712\u5340\u822a\u7fd4\u8def\u0031\u0030\u0031\u865f\u0035\u6a13\u0054\u0035\u0030\u0032\u0034\u0043\u5ba4",
+  "\u6843\u5712\u5e02\u5927\u5712\u5340\u822a\u7fd4\u8def\u0031\u0030\u0031\u865f\u0034\u6a13\u0054\u0034\u0030\u0035\u0038\u5ba4",
+  "\u65b0\u5317\u5e02\u65b0\u838a\u5340\u6c11\u5b89\u8def\u0034\u0032\u0030\u5df7\u0033\u0032\u865f",
+  "\u53f0\u5317\u7e23\u677f\u6a4b\u5e02\u6587\u5316\u8def\u4e00\u6bb5\u0031\u0030\u0030\u865f",
+  "\u53f0\u4e2d\u5e02\u897f\u5c6f\u5340\u53f0\u7063\u5927\u9053\u4e09\u6bb5\u0039\u0039\u865f",
+  "\u9ad8\u96c4\u5e02\u0020\u82d3\u96c5\u5340\u0020\u56db\u7dad\u4e09\u8def\u0020\u0032\u865f",
+  "\u65b0\u7af9\u5e02\u5149\u5fa9\u8def\u4e8c\u6bb5\u0031\u0030\u0031\u865f",
+  "\u81fa\u4e2d\u5e02\u6771\u5340\u632f\u8208\u8def\u0038\u0037\u865f",
+  "\u53f0\u5357\u7e23\u65b0\u71df\u5e02\u4e2d\u6b63\u8def\u0035\u0030\u865f",
+  "\u5c4f\u6771\u7e23\u6f6e\u5dde\u93ae\u592a\u5e73\u8def\uff11\uff12\uff13\u865f",
+  "\u4e2d\u6b63\u8def\u0031\u0030\u0030\u865f",
+  "\u6f8e\u6e56\u7e23\u67d0\u67d0\u67d0",
+  "\u9ad8\u96c4\u7e23\u5ca1\u5c71\u93ae\u5ca1\u5c71\u8def\u0031\u0030\u865f",
+  "\u81fa\u5317\u5e02\u5927\u5b89\u5340\u5fe0\u5b5d\u6771\u8def\u56db\u6bb5\u0031\u865f",
+  "\u65b0\u5317\u5e02\u677f\u6a4b\u5340\u6587\u5316\u8def\u4e00\u6bb5\u0031\u0038\u0038\u865f"
+];
+
+let regionMisses = 0;
+let districtMisses = 0;
+
+console.log("--- Results ---");
+for (const addr of TEST_ADDRESSES) {
+  const result = parseAddress(addr);
+  console.log(JSON.stringify({ addr, region: result.region, district: result.district }));
+  if (!result.region) regionMisses++;
+  if (!result.district) districtMisses++;
+}
+
+console.log("\n--- Summary ---");
+console.log(`Total: ${TEST_ADDRESSES.length}`);
+console.log(`Region misses: ${regionMisses} (${((regionMisses / TEST_ADDRESSES.length) * 100).toFixed(1)}%)`);
+console.log(`District misses: ${districtMisses} (${((districtMisses / TEST_ADDRESSES.length) * 100).toFixed(1)}%)`);

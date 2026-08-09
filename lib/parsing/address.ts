@@ -1,0 +1,118 @@
+export const REGION_DISTRICTS: Record<string, string[]> = {
+  "\u81fa\u5317\u5e02": ["\u4e2d\u6b63\u5340", "\u5927\u540c\u5340", "\u4e2d\u5c71\u5340", "\u677e\u5c71\u5340", "\u5927\u5b89\u5340", "\u842c\u83ef\u5340", "\u4fe1\u7fa9\u5340", "\u58eb\u6797\u5340", "\u5317\u6295\u5340", "\u5167\u6e56\u5340", "\u5357\u6e2f\u5340", "\u6587\u5c71\u5340"],
+  "\u57fa\u9686\u5e02": ["\u4ec1\u611b\u5340", "\u4fe1\u7fa9\u5340", "\u4e2d\u6b63\u5340", "\u4e2d\u5c71\u5340", "\u5b89\u6a02\u5340", "\u6696\u6696\u5340", "\u4e03\u5835\u5340"],
+  "\u65b0\u5317\u5e02": ["\u842c\u91cc\u5340", "\u91d1\u5c71\u5340", "\u677f\u6a4b\u5340", "\u6c50\u6b62\u5340", "\u6df1\u5751\u5340", "\u77f3\u7887\u5340", "\u745e\u82b3\u5340", "\u5e73\u6eaa\u5340", "\u96d9\u6eaa\u5340", "\u8ca2\u5bee\u5340", "\u65b0\u5e97\u5340", "\u576a\u6797\u5340", "\u70cf\u4f86\u5340", "\u6c38\u548c\u5340", "\u4e2d\u548c\u5340", "\u571f\u57ce\u5340", "\u4e09\u5cfd\u5340", "\u6a39\u6797\u5340", "\u9daf\u6b4c\u5340", "\u4e09\u91cd\u5340", "\u65b0\u838a\u5340", "\u6cf0\u5c71\u5340", "\u6797\u53e3\u5340", "\u8606\u6d32\u5340", "\u4e94\u80a1\u5340", "\u516b\u91cc\u5340", "\u6de1\u6c34\u5340", "\u4e09\u829d\u5340", "\u77f3\u9580\u5340"],
+  "\u9023\u6c5f\u7e23": ["\u5357\u7aff\u9109", "\u5317\u7aff\u9109", "\u8392\u5149\u9109", "\u6771\u5f15\u9109"],
+  "\u5b9c\u862d\u7e23": ["\u5b9c\u862d\u5e02", "\u58ef\u570d\u9109", "\u982d\u57ce\u93ae", "\u7901\u6eaa\u9109", "\u54e1\u5c71\u9109", "\u7f85\u6771\u93ae", "\u4e09\u661f\u9109", "\u5927\u540c\u9109", "\u4e94\u7d50\u9109", "\u51ac\u5c71\u9109", "\u8607\u6fb3\u93ae", "\u5357\u6fb3\u9109"],
+  "\u65b0\u7af9\u5e02": ["\u6771\u5340", "\u5317\u5340", "\u9999\u5c71\u5340"],
+  "\u65b0\u7af9\u7e23": ["\u5bf6\u5c71\u9109", "\u7af9\u5317\u5e02", "\u6e56\u53e3\u9109", "\u65b0\u8c50\u9109", "\u65b0\u57d4\u93ae", "\u95dc\u897f\u93ae", "\u828e\u6797\u9109", "\u7af9\u6771\u93ae", "\u4e94\u5cf0\u9109", "\u6a6b\u5c71\u9109", "\u5c16\u77f3\u9109", "\u5317\u57d4\u9109", "\u5ce8\u7709\u9109"],
+  "\u6843\u5712\u5e02": ["\u4e2d\u58e2\u5340", "\u5e73\u93ae\u5340", "\u9f8d\u6f6d\u5340", "\u694a\u6885\u5340", "\u65b0\u5c4b\u5340", "\u89c0\u97f3\u5340", "\u6843\u5712\u5340", "\u9f9c\u5c71\u5340", "\u516b\u5fb7\u5340", "\u5927\u6eaa\u5340", "\u5fa9\u8208\u5340", "\u5927\u5712\u5340", "\u8606\u7af9\u5340"],
+  "\u82d7\u6817\u7e23": ["\u7af9\u5357\u93ae", "\u982d\u4efd\u5e02", "\u4e09\u7063\u9109", "\u5357\u5e84\u9109", "\u7345\u6f6d\u9109", "\u5f8c\u9f8d\u93ae", "\u901a\u9704\u93ae", "\u82d1\u88e1\u93ae", "\u82d7\u6817\u5e02", "\u9020\u6a4b\u9109", "\u982d\u5c4b\u9109", "\u516c\u9928\u9109", "\u5927\u6e56\u9109", "\u6cf0\u5b89\u9109", "\u9285\u947c\u9109", "\u4e09\u7fa9\u9109", "\u897f\u6e56\u9109", "\u5353\u862d\u93ae"],
+  "\u81fa\u4e2d\u5e02": ["\u4e2d\u5340", "\u6771\u5340", "\u5357\u5340", "\u897f\u5340", "\u5317\u5340", "\u5317\u5c6f\u5340", "\u897f\u5c6f\u5340", "\u5357\u5c6f\u5340", "\u592a\u5e73\u5340", "\u5927\u91cc\u5340", "\u9727\u5cf0\u5340", "\u70cf\u65e5\u5340", "\u8c50\u539f\u5340", "\u540e\u91cc\u5340", "\u77f3\u5ca1\u5340", "\u6771\u52e2\u5340", "\u548c\u5e73\u5340", "\u65b0\u793e\u5340", "\u6f6d\u5b50\u5340", "\u5927\u96c5\u5340", "\u795e\u5ca1\u5340", "\u5927\u809a\u5340", "\u6c99\u9e7f\u5340", "\u9f8d\u4e95\u5340", "\u68a7\u68f2\u5340", "\u6e05\u6c34\u5340", "\u5927\u7532\u5340", "\u5916\u57d4\u5340", "\u5927\u5b89\u5340"],
+  "\u5f70\u5316\u7e23": ["\u5f70\u5316\u5e02", "\u82ac\u5712\u9109", "\u82b1\u58c7\u9109", "\u79c0\u6c34\u9109", "\u9e7f\u6e2f\u93ae", "\u798f\u8208\u9109", "\u7dda\u897f\u9109", "\u548c\u7f8e\u93ae", "\u4f38\u6e2f\u9109", "\u54e1\u6797\u5e02", "\u793e\u982d\u9109", "\u6c38\u9756\u9109", "\u57d4\u5fc3\u9109", "\u6eaa\u6e56\u93ae", "\u5927\u6751\u9109", "\u57d4\u9e7d\u9109", "\u7530\u4e2d\u93ae", "\u5317\u6597\u93ae", "\u7530\u5c3e\u9109", "\u57e4\u982d\u9109", "\u6eaa\u5dde\u9109", "\u7af9\u5858\u9109", "\u4e8c\u6797\u93ae", "\u5927\u57ce\u9109", "\u82b3\u82d1\u9109", "\u4e8c\u6c34\u9109"],
+  "\u5357\u6295\u7e23": ["\u5357\u6295\u5e02", "\u4e2d\u5bee\u9109", "\u8349\u5c6f\u93ae", "\u570b\u59d3\u9109", "\u57d4\u91cc\u93ae", "\u4ec1\u611b\u9109", "\u540d\u9593\u9109", "\u96c6\u96c6\u93ae", "\u6c34\u91cc\u9109", "\u9b5a\u6c60\u9109", "\u4fe1\u7fa9\u9109", "\u7af9\u5c71\u93ae", "\u9e7f\u8c37\u9109"],
+  "\u5609\u7fa9\u5e02": ["\u897f\u5340", "\u6771\u5340"],
+  "\u5609\u7fa9\u7e23": ["\u756a\u8def\u9109", "\u6885\u5c71\u9109", "\u7af9\u5d0e\u9109", "\u963f\u91cc\u5c71\u9109", "\u4e2d\u57d4\u9109", "\u5927\u57d4\u9109", "\u6c34\u4e0a\u9109", "\u9e7f\u8349\u9109", "\u592a\u4fdd\u5e02", "\u6734\u5b50\u5e02", "\u6771\u77f3\u9109", "\u516d\u8173\u9109", "\u65b0\u6e2f\u9109", "\u6c11\u96c4\u9109", "\u5927\u6797\u93ae", "\u6eaa\u53e3\u9109", "\u7fa9\u7af9\u9109", "\u5e03\u888b\u93ae"],
+  "\u96f2\u6797\u7e23": ["\u6597\u5357\u93ae", "\u5927\u57e4\u9109", "\u864e\u5c3e\u93ae", "\u571f\u5eab\u93ae", "\u8912\u5fe0\u9109", "\u6771\u52e2\u9109", "\u81fa\u897f\u9109", "\u5d19\u80cc\u9109", "\u9ea5\u5bee\u9109", "\u6597\u516d\u5e02", "\u6797\u5167\u9109", "\u53e4\u5751\u9109", "\u83bf\u6850\u9109", "\u897f\u87ba\u93ae", "\u4e8c\u5d19\u9109", "\u5317\u6e2f\u93ae", "\u6c34\u6797\u9109", "\u53e3\u6e56\u9109", "\u56db\u6e56\u9109", "\u5143\u9577\u9109"],
+  "\u81fa\u5357\u5e02": ["\u4e2d\u897f\u5340", "\u6771\u5340", "\u5357\u5340", "\u5317\u5340", "\u5b89\u5e73\u5340", "\u5b89\u5357\u5340", "\u6c38\u5eb7\u5340", "\u6b78\u4ec1\u5340", "\u65b0\u5316\u5340", "\u5de6\u93ae\u5340", "\u7389\u4e95\u5340", "\u6960\u897f\u5340", "\u5357\u5316\u5340", "\u4ec1\u5fb7\u5340", "\u95dc\u5edf\u5340", "\u9f8d\u5d0e\u5340", "\u5b98\u7530\u5340", "\u9ebb\u8c46\u5340", "\u4f73\u91cc\u5340", "\u897f\u6e2f\u5340", "\u4e03\u80a1\u5340", "\u5c07\u8ecd\u5340", "\u5b78\u7532\u5340", "\u5317\u9580\u5340", "\u65b0\u71df\u5340", "\u5f8c\u58c1\u5340", "\u767d\u6cb3\u5340", "\u6771\u5c71\u5340", "\u516d\u7532\u5340", "\u4e0b\u71df\u5340", "\u67f3\u71df\u5340", "\u9e7d\u6c34\u5340", "\u5584\u5316\u5340", "\u65b0\u5e02\u5340", "\u5927\u5167\u5340", "\u5c71\u4e0a\u5340", "\u5b89\u5b9a\u5340"],
+  "\u9ad8\u96c4\u5e02": ["\u65b0\u8208\u5340", "\u524d\u91d1\u5340", "\u82d3\u96c5\u5340", "\u9e7d\u57d5\u5340", "\u9f13\u5c71\u5340", "\u65d7\u6d25\u5340", "\u524d\u93ae\u5340", "\u4e09\u6c11\u5340", "\u6960\u6893\u5340", "\u5c0f\u6e2f\u5340", "\u5de6\u71df\u5340", "\u4ec1\u6b66\u5340", "\u5927\u793e\u5340", "\u5ca1\u5c71\u5340", "\u8def\u7af9\u5340", "\u963f\u84ee\u5340", "\u7530\u5bee\u5340", "\u71d5\u5de2\u5340", "\u6a4b\u982d\u5340", "\u6893\u5b98\u5340", "\u5f4c\u9640\u5340", "\u6c38\u5b89\u5340", "\u6e56\u5167\u5340", "\u9cf3\u5c71\u5340", "\u5927\u5bee\u5340", "\u6797\u5712\u5340", "\u9ce5\u677e\u5340", "\u5927\u6a39\u5340", "\u65d7\u5c71\u5340", "\u7f8e\u6fc3\u5340", "\u516d\u9f9c\u5340", "\u5167\u9580\u5340", "\u6749\u6797\u5340", "\u7532\u4ed9\u5340", "\u6843\u6e90\u5340", "\u90a3\u746a\u590f\u5340", "\u8302\u6797\u5340", "\u8304\u8423\u5340"],
+  "\u6f8e\u6e56\u7e23": ["\u99ac\u516c\u5e02", "\u897f\u5dbc\u9109", "\u671b\u5b89\u9109", "\u4e03\u7f8e\u9109", "\u767d\u6c99\u9109", "\u6e56\u897f\u9109"],
+  "\u91d1\u9580\u7e23": ["\u91d1\u6c99\u93ae", "\u91d1\u6e56\u93ae", "\u91d1\u5be7\u9109", "\u91d1\u57ce\u93ae", "\u70c8\u5dbc\u9109", "\u70cf\u5775\u9109"],
+  "\u5c4f\u6771\u7e23": ["\u5c4f\u6771\u5e02", "\u4e09\u5730\u9580\u9109", "\u9727\u81fa\u9109", "\u746a\u5bb6\u9109", "\u4e5d\u5982\u9109", "\u91cc\u6e2f\u9109", "\u9ad8\u6a39\u9109", "\u9e7d\u57d4\u9109", "\u9577\u6cbb\u9109", "\u9e9f\u6d1b\u9109", "\u7af9\u7530\u9109", "\u5167\u57d4\u9109", "\u842c\u4e39\u9109", "\u6f6e\u5dde\u93ae", "\u6cf0\u6b66\u9109", "\u4f86\u7fa9\u9109", "\u842c\u5dd2\u9109", "\u5d01\u9802\u9109", "\u65b0\u57e4\u9109", "\u5357\u5dde\u9109", "\u6797\u908a\u9109", "\u6771\u6e2f\u93ae", "\u7409\u7403\u9109", "\u4f73\u51ac\u9109", "\u65b0\u5712\u9109", "\u678b\u5bee\u9109", "\u678b\u5c71\u9109", "\u6625\u65e5\u9109", "\u7345\u5b50\u9109", "\u8eca\u57ce\u9109", "\u7261\u4e39\u9109", "\u6046\u6625\u93ae", "\u6eff\u5dde\u9109"],
+  "\u81fa\u6771\u7e23": ["\u81fa\u6771\u5e02", "\u7da0\u5cf6\u9109", "\u862d\u5dbc\u9109", "\u5ef6\u5e73\u9109", "\u5351\u5357\u9109", "\u9e7f\u91ce\u9109", "\u95dc\u5c71\u93ae", "\u6d77\u7aef\u9109", "\u6c60\u4e0a\u9109", "\u6771\u6cb3\u9109", "\u6210\u529f\u93ae", "\u9577\u6ff1\u9109", "\u592a\u9ebb\u91cc\u9109", "\u91d1\u5cf0\u9109", "\u5927\u6b66\u9109", "\u9054\u4ec1\u9109"],
+  "\u82b1\u84ee\u7e23": ["\u82b1\u84ee\u5e02", "\u65b0\u57ce\u9109", "\u79c0\u6797\u9109", "\u5409\u5b89\u9109", "\u58fd\u8c50\u9109", "\u9cf3\u6797\u93ae", "\u5149\u5fa9\u9109", "\u8c50\u6ff1\u9109", "\u745e\u7a57\u9109", "\u842c\u69ae\u9109", "\u7389\u91cc\u93ae", "\u5353\u6eaa\u9109", "\u5bcc\u91cc\u9109"],
+};
+
+// Pre-2010 county-city merger: old county name -> current city name.
+// Confirmed pairs (verified against Taiwan's official 2010/2014 administrative
+// restructuring): 台北縣->新北市, 台中縣->臺中市, 台南縣->臺南市, 高雄縣->高雄市,
+// 桃園縣->桃園市 (2014, direct-administered city status change).
+const OLD_COUNTY_TO_CURRENT_CITY: [string, string][] = [
+  ["\u81fa\u5317\u7e23", "\u65b0\u5317\u5e02"],
+  ["\u53f0\u5317\u7e23", "\u65b0\u5317\u5e02"],
+  ["\u81fa\u4e2d\u7e23", "\u81fa\u4e2d\u5e02"],
+  ["\u53f0\u4e2d\u7e23", "\u81fa\u4e2d\u5e02"],
+  ["\u81fa\u5357\u7e23", "\u81fa\u5357\u5e02"],
+  ["\u53f0\u5357\u7e23", "\u81fa\u5357\u5e02"],
+  ["\u9ad8\u96c4\u7e23", "\u9ad8\u96c4\u5e02"],
+  ["\u6843\u5712\u7e23", "\u6843\u5712\u5e02"],
+];
+
+// 台/臺 are interchangeable prefix variants for the same region - map the
+// simplified 台 form to the canonical 臺 form used in REGION_DISTRICTS' keys.
+const TAI_VARIANT_TO_CANONICAL: [string, string][] = [
+  ["\u53f0\u5317\u5e02", "\u81fa\u5317\u5e02"],
+  ["\u53f0\u4e2d\u5e02", "\u81fa\u4e2d\u5e02"],
+  ["\u53f0\u5357\u5e02", "\u81fa\u5357\u5e02"],
+  ["\u53f0\u6771\u7e23", "\u81fa\u6771\u7e23"],
+];
+
+export interface ParsedAddress {
+  region: string | null;
+  district: string | null;
+}
+
+function normalizeRegionToken(token: string): string | null {
+  for (const [old, current] of OLD_COUNTY_TO_CURRENT_CITY) {
+    if (token === old) return current;
+  }
+  for (const [variant, canonical] of TAI_VARIANT_TO_CANONICAL) {
+    if (token === variant) return canonical;
+  }
+  if (token in REGION_DISTRICTS) return token;
+  return null;
+}
+
+/**
+ * Parses a raw Taiwan address string into region (縣市) and district (鄉鎮市區).
+ * Closed-set matching only - never guesses. Returns null for either field
+ * rather than a wrong value, per Session 8's objective: a null is honest
+ * and filterable, a wrong guess silently corrupts region/district search.
+ *
+ * KNOWN LIMITATION (see Section 11): pre-2010 merger OLD COUNTY names are
+ * handled (e.g. 台北縣 -> 新北市), but pre-2010 OLD TOWNSHIP names within
+ * those counties (e.g. 板橋市, which became 板橋區) are NOT individually
+ * mapped - only a handful of well-known examples would match. A full old
+ * township mapping (100+ pairs across 4 merged counties) was out of scope
+ * for this session; budget a follow-up if real ingested data shows this
+ * pattern clustering as a real failure mode.
+ */
+export function parseAddress(raw: string): ParsedAddress {
+  if (!raw || typeof raw !== "string") {
+    return { region: null, district: null };
+  }
+
+  const trimmed = raw.trim();
+
+  // Every Taiwan county/city name - current (all 22) and pre-2010 old
+  // county names alike - is exactly 3 characters. No shorter/longer
+  // prefix ever needs checking.
+  let matchedRegion: string | null = null;
+  let remainder = "";
+
+  const candidate = trimmed.slice(0, 3);
+  const normalized = normalizeRegionToken(candidate);
+  if (normalized) {
+    matchedRegion = normalized;
+    remainder = trimmed.slice(3).trim();
+  }
+
+  if (!matchedRegion) {
+    return { region: null, district: null };
+  }
+
+  // District: closed-set match against ONLY this region's real districts,
+  // checked longest-first since some names are 2 chars and others 3-4.
+  const validDistricts = REGION_DISTRICTS[matchedRegion] || [];
+  const sortedByLength = [...validDistricts].sort((a, b) => b.length - a.length);
+
+  let matchedDistrict: string | null = null;
+  for (const district of sortedByLength) {
+    if (remainder.startsWith(district)) {
+      matchedDistrict = district;
+      break;
+    }
+  }
+
+  return { region: matchedRegion, district: matchedDistrict };
+}
