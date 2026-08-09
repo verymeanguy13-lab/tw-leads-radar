@@ -1,0 +1,32 @@
+name: Monthly Ingestion
+
+on:
+  schedule:
+    - cron: "0 3 5 * *"
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Run ingestion
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx scripts/run-ingest.ts
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          curl -X POST "https://api.resend.com/emails" -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -d "{\"from\":\"$EMAIL_FROM\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"tw-leads-radar ingestion FAILED\",\"html\":\"<p>The monthly ingestion run failed. Check the Actions log for details.</p>\"}"
