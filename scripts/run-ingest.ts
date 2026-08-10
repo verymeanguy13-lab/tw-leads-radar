@@ -1,18 +1,63 @@
-import { fetchAllDatasets } from "../lib/ingestion/fetch";
+import { fetchDataset, NoNewDataError } from "../lib/ingestion/fetch";
+import { normalizeFile } from "../lib/ingestion/normalize";
+import { upsertRows } from "../lib/ingestion/upsert";
+import { DATASET_SOURCES } from "../lib/ingestion/sources.config";
+import { db } from "../lib/db";
 
 async function main() {
   console.log("Starting ingestion run...");
-  const { results, failures } = await fetchAllDatasets();
+  const sql = db();
 
-  console.log(`\nCompleted: ${results.length} succeeded, ${failures.length} failed.`);
-  results.forEach((r) => console.log(`  OK ${r.source.nameZh} - ${r.monthLabel}`));
+  let successCount = 0;
+  const failures: string[] = [];
 
-  if (failures.length > 0) {
-    console.error("\nFailures:");
-    failures.forEach((f) => console.error(`  FAIL ${f}`));
-    process.exit(1);
+  for (const source of DATASET_SOURCES) {
+    let fetchResult;
+    try {
+      fetchResult = await fetchDataset(source);
+    } catch (err) {
+      if (err instanceof NoNewDataError) {
+        console.log(`  SKIP ${source.nameZh}: ${err.message}`);
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`  FAIL ${source.nameZh} (fetch stage): ${message}`);
+        failures.push(`${source.nameZh}: ${message}`);
+      }
+      continue;
+    }
+
+    try {
+      const normalized = await normalizeFile(fetchResult.filePath, source.id, fetchResult.ingestionRunId);
+      const summary = await upsertRows(normalized.rows, fetchResult.monthLabel);
+
+      await sql`
+        UPDATE ingestion_runs
+        SET new_count = ${summary.inserted}, updated_count = ${summary.updated}
+        WHERE id = ${fetchResult.ingestionRunId}
+      `;
+
+      console.log(
+        `  OK ${source.nameZh} - ${fetchResult.monthLabel}: ${normalized.rows.length} rows, ` +
+        `${summary.inserted} new, ${summary.updated} updated, ${normalized.failures.length} parse failures`
+      );
+      successCount++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`  FAIL ${source.nameZh} (normalize/upsert stage): ${message}`);
+      await sql`
+        UPDATE ingestion_runs
+        SET status = ${"failed"}, error_log = ${message}, completed_at = now()
+        WHERE id = ${fetchResult.ingestionRunId}
+      `;
+      failures.push(`${source.nameZh}: ${message}`);
+    }
   }
 
+  console.log(`\nCompleted: ${successCount} succeeded, ${failures.length} failed.`);
+
+  if (failures.length > 0) {
+    process.exit(1);
+  }
   process.exit(0);
 }
 

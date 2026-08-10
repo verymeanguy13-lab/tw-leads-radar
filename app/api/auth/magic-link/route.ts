@@ -5,11 +5,13 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export async function POST(req: NextRequest) {
-  const { email } = await req.json();
+  const { email, callbackUrl } = await req.json();
 
   if (!email || typeof email !== "string") {
     return NextResponse.json({ error: "Email required" }, { status: 400 });
   }
+
+  const safeCallbackUrl = typeof callbackUrl === "string" ? callbackUrl : "/searches";
 
   const token = await encode({
     token: { email },
@@ -17,7 +19,7 @@ export async function POST(req: NextRequest) {
     maxAge: 15 * 60,
   });
 
-  const link = `${process.env.NEXTAUTH_URL}/login/verify?token=${token}`;
+  const link = `${process.env.NEXTAUTH_URL}/login/verify?token=${token}&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`;
 
   const result = await resend.emails.send({
     from: process.env.EMAIL_FROM || "onboarding@resend.dev",

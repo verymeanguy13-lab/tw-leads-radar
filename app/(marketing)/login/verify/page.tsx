@@ -6,12 +6,13 @@ import { signIn } from "next-auth/react";
 function VerifyInner() {
   const params = useSearchParams();
   const token = params.get("token");
+  const callbackUrl = params.get("callbackUrl") || "/searches";
 
   useEffect(() => {
     if (token) {
-      signIn("magic-link", { token, callbackUrl: "/searches" });
+      signIn("magic-link", { token, callbackUrl });
     }
-  }, [token]);
+  }, [token, callbackUrl]);
 
   return <p className="p-8">Logging you in...</p>;
 }

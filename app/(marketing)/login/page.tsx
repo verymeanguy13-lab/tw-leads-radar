@@ -1,7 +1,10 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
+  const params = useSearchParams();
+  const callbackUrl = params.get("callbackUrl") || "/searches";
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
 
@@ -10,7 +13,7 @@ export default function LoginPage() {
     await fetch("/api/auth/magic-link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, callbackUrl }),
     });
     setSent(true);
   }
@@ -33,5 +36,13 @@ export default function LoginPage() {
         Send login link
       </button>
     </form>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<p className="p-8">Loading...</p>}>
+      <LoginForm />
+    </Suspense>
   );
 }
