@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_TC, Inter } from "next/font/google";
 import "./globals.css";
-
+import Footer from "@/components/Footer";
 const notoSansTC = Noto_Sans_TC({
   variable: "--font-noto-sans-tc",
   subsets: ["latin"],
@@ -24,7 +24,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="zh-TW"
       className={`${notoSansTC.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Footer />
+      </body>
     </html>
   );
 }
