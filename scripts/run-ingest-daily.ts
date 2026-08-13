@@ -33,6 +33,22 @@ const PROFILE_API =
 const PAGE_SIZE = 50; // confirmed working value from manual testing; raise later if needed
 const PROFILE_FETCH_DELAY_MS = 150; // gentle pacing across the N profile calls — see note at bottom
 
+/**
+ * The `companies` table's `status` column has a CHECK constraint allowing
+ * only: active / changed / dissolved / suspended (see blueprint Section 5).
+ * GCIS's Company_Status_Desc field returns raw Chinese text instead
+ * (e.g. "核准設立") — inserting that directly violates the constraint and
+ * fails every row. Map it here before it ever reaches the INSERT.
+ */
+function mapStatus(gcisStatus: string | undefined): string {
+  if (!gcisStatus) return "active";
+  if (gcisStatus.includes("核准設立") || gcisStatus.includes("核准")) return "active";
+  if (gcisStatus.includes("解散")) return "dissolved";
+  if (gcisStatus.includes("停業") || gcisStatus.includes("歇業")) return "suspended";
+  console.warn(`Unmapped GCIS status "${gcisStatus}" — defaulted to 'active'`);
+  return "active";
+}
+
 const sql = neon(process.env.NEON_DATABASE_URL!);
 
 interface DiscoveryRow {
@@ -47,13 +63,11 @@ interface ProfileRow {
   Capital_Stock_Amount: number;
   Responsible_Name: string;
   Company_Location: string;
-  Company_Setup_Date: string; // ROC yyy MM dd, e.g. "1150811"
+  Company_Setup_Date: string;
 }
 
 function todayRocDate(): string {
   const now = new Date();
-  // Taipei is UTC+8, no DST — shift explicitly rather than trusting the
-  // runner's local timezone (GitHub Actions runners are UTC).
   const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const rocYear = taipei.getUTCFullYear() - 1911;
   const mm = String(taipei.getUTCMonth() + 1).padStart(2, "0");
@@ -77,7 +91,7 @@ async function fetchDiscoveryPage(rocDate: string, skip: number): Promise<Discov
     throw new Error(`Discovery API ${res.status} for ${rocDate} skip=${skip}`);
   }
   const text = await res.text();
-  if (!text) return []; // empty body = no more results (e.g. weekend, or end of page range)
+  if (!text) return [];
   return JSON.parse(text) as DiscoveryRow[];
 }
 
@@ -88,7 +102,7 @@ async function fetchAllForDate(rocDate: string): Promise<DiscoveryRow[]> {
     const page = await fetchDiscoveryPage(rocDate, skip);
     if (page.length === 0) break;
     all.push(...page);
-    if (page.length < PAGE_SIZE) break; // last page
+    if (page.length < PAGE_SIZE) break;
     skip += PAGE_SIZE;
   }
   return all;
@@ -107,7 +121,6 @@ async function fetchProfile(uniformId: string): Promise<ProfileRow | null> {
 }
 
 function rocDateToIso(roc: string): string {
-  // "1150811" -> "2026-08-11"
   const rocYear = parseInt(roc.slice(0, roc.length - 4), 10);
   const mm = roc.slice(-4, -2);
   const dd = roc.slice(-2);
@@ -153,7 +166,7 @@ async function ingestDate(rocDate: string, runStats: {
           ${profile?.Company_Location ?? null},
           ${profile?.Responsible_Name ?? null},
           ${registrationDate},
-          ${profile?.Company_Status_Desc ?? 'active'},
+          ${mapStatus(profile?.Company_Status_Desc)},
           now(),
           'gcis_daily_setup_query'
         )
@@ -165,9 +178,6 @@ async function ingestDate(rocDate: string, runStats: {
           status = EXCLUDED.status,
           status_updated_at = now()
       `;
-      // NOTE: address_region / address_district are intentionally left
-      // for the Address Parser (blueprint Session 8) to populate from
-      // address_raw in a separate pass — not duplicated here.
 
       if (isNew) runStats.newCount++;
       else runStats.updatedCount++;
@@ -224,25 +234,3 @@ async function main() {
 }
 
 main();
-
-/**
- * REVIEW BEFORE RELYING ON THIS IN PRODUCTION:
- *
- * 1. Rate limiting is unconfirmed. This script makes one discovery call
- *    plus one profile call PER COMPANY, per day. On a busy weekday that
- *    could be several hundred profile calls in one run. PROFILE_FETCH_DELAY_MS
- *    adds light pacing, but GCIS's actual tolerance has not been tested
- *    at this volume — only single manual requests have been confirmed
- *    working. Watch the first few real runs' logs for errors before
- *    trusting this unattended.
- *
- * 2. industry_codes is not populated here — no industry-code field came
- *    back from either endpoint tested so far. If that turns out to require
- *    a separate API, wire it in as its own enrichment step.
- *
- * 3. entity_type is hardcoded to 'company' — this script only calls the
- *    company-side APIs (公司資料設立查詢). 商業 (sole proprietorship/
- *    partnership) entities need a separate discovery mechanism if you
- *    want them too — no equivalent "設立查詢"-by-date API was found for
- *    商業 in this project's research so far.
- */
