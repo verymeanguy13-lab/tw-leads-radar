@@ -1,0 +1,41 @@
+name: Daily Company Ingestion
+
+# Runs once a day. GCIS's own confirmation says a well-formed
+# $filter=Company_Setup_Date query works unauthenticated for both
+# discovery (公司資料設立查詢) and full profile (公司登記基本資料-應用一) —
+# no IP whitelist needed for this cadence. See blueprint Section 11,
+# "Session 13 pre-work, 2026-08-12" correction entry.
+#
+# Cron is in UTC. 22:00 UTC = 06:00 Taipei time (UTC+8) the next day —
+# gives GCIS's own systems overnight to finish processing the prior
+# day's approvals before we ask for them.
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab for testing
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run daily ingestion
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx scripts/run-ingest-daily.ts
+
+      - name: Report failure
+        if: failure()
+        run: echo "::error::Daily ingestion failed — check ingestion_runs table for the logged error, or the Action logs above for a crash before logging happened."
