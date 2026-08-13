@@ -1,41 +1,27 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 
 function LoginForm() {
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/searches";
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await fetch("/api/auth/magic-link", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, callbackUrl }),
-    });
-    setSent(true);
-  }
-
-  if (sent) {
-    return <p className="p-8">Check your email for the login link.</p>;
-  }
 
   return (
-    <form onSubmit={handleSubmit} className="p-8 max-w-sm">
-      <input
-        type="email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="you@example.com"
-        className="border-default border rounded px-3 py-2 w-full mb-3"
-      />
-      <button type="submit" className="bg-[var(--accent)] text-white rounded px-4 py-2 w-full">
-        Send login link
+    <div className="p-8 max-w-sm">
+      <button
+        onClick={() => signIn("google", { callbackUrl })}
+        className="bg-[var(--accent)] text-white rounded px-4 py-2 w-full mb-3"
+      >
+        使用 Google 登入
       </button>
-    </form>
+      <button
+        onClick={() => signIn("facebook", { callbackUrl })}
+        className="border-default border rounded px-4 py-2 w-full"
+      >
+        使用 Facebook 登入
+      </button>
+    </div>
   );
 }
 
