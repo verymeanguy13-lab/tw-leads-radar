@@ -5,7 +5,7 @@ import { signIn } from "next-auth/react";
 
 function LoginForm() {
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/searches";
+  const callbackUrl = params.get("callbackUrl") || "/searches/new";
 
   return (
     <div className="p-8 max-w-sm">
