@@ -2,6 +2,8 @@
 
 Backfilled 2026-08-13 from the project blueprint (blueprint_updated_11.docx)
 and the repo's own corrections log (Section 11), covering Sessions 1-12.
+Updated 2026-08-13 (same day, second pass) to fix schema staleness and
+record the daily-ingestion bug fixes and pricing-page redo.
 Maintained going forward per-session alongside db/schema.sql.
 
 ## Stack
@@ -10,7 +12,7 @@ Next.js, TypeScript, Neon PostgreSQL, Vercel Hobby tier, Paddle billing,
 NextAuth v4 (Google + Facebook OAuth as of the 2026-08-12 correction —
 originally magic-link/email in Sessions 1-5, revised after Session 12).
 
-## Schema (as of Session 12)
+## Schema (as of 2026-08-13 — corrected, previous version was missing two fields)
 
 | Table | Key fields |
 |---|---|
@@ -19,7 +21,7 @@ originally magic-link/email in Sessions 1-5, revised after Session 12).
 | **companies** | uniform_id VARCHAR(8) PK (統一編號), entity_type CHECK(company/business), name, industry_codes TEXT[], capital NUMERIC, address_raw, address_region, address_district, responsible_person, registration_date DATE (source of truth for "new"), status CHECK(active/changed/dissolved/suspended), status_updated_at, source_dataset, source_month |
 | **saved_searches** | id UUID PK, user_id FK→users, name, industry_codes TEXT[], regions TEXT[], capital_min/max NUMERIC, entity_type CHECK(company/business/both), keyword, cadence CHECK(weekly/monthly), paused BOOLEAN |
 | **search_matches** | id UUID PK, saved_search_id FK, company_uniform_id FK, matched_at, surfaced_in_digest BOOLEAN, surfaced_at, UNIQUE(saved_search_id, company_uniform_id) |
-| **ingestion_runs** | id UUID PK, dataset_name, source_month, row_count, new_count, updated_count, parse_failures, encoding_detected, status CHECK(running/success/failed/partial), error_log, started_at, completed_at |
+| **ingestion_runs** | id UUID PK, dataset_name, source_month, **source_url** (added Session 6, was missing from this doc until 2026-08-13), row_count, new_count, updated_count, parse_failures, encoding_detected, status CHECK(running/success/failed/partial/**no_new_data** — 5th value added Session 6, was missing from this doc until 2026-08-13), error_log, started_at, completed_at |
 
 RLS via `app_user` role + `app.current_user_id` session setting on
 users/subscriptions/saved_searches/search_matches. `companies` and
@@ -37,7 +39,7 @@ registration datasets (confirmed in Session 11's corrections log).
    latest-month CSV link → `fetch.ts` downloads it.
 2. Raw files saved to scratch storage before parsing (never parse-on-stream).
 3. Encoding detected + normalized per file (`normalize.ts`).
-4. Address parsed into region/district (`lib/ingestion/parsing`).
+4. Address parsed into region/district (`lib/parsing/address.ts`).
 5. Rows diffed against `companies` by `uniform_id` — insert if new
    (per `registration_date`), update status/fields if existing.
 6. `ingestion_runs` row logged with counts and parse failures.
@@ -49,8 +51,15 @@ registration datasets (confirmed in Session 11's corrections log).
 Separately, as of 2026-08-12: a **daily** discovery pipeline
 (`.github/workflows/ingest-daily.yml` → `scripts/run-ingest-daily.ts`)
 queries GCIS's `Company_Setup_Date`-filtered API directly, confirmed
-working unauthenticated with next-day freshness — runs alongside the
-above monthly pipeline, does not replace it.
+working unauthenticated — runs alongside the above monthly pipeline,
+does not replace it. **公司 (company) entities only** — no equivalent
+daily discovery endpoint exists for 商業 (business/sole-proprietorship)
+entities, which stay monthly-only regardless of subscription tier.
+
+Status for daily-ingested rows is derived from GCIS's structured
+`Revoke_App_Date`/`Sus_Beg_Date`/`Sus_End_Date` fields, never by
+matching `Company_Status_Desc` text — see the 2026-08-13 correction
+below for why.
 
 ## Session Log — Sessions 1-12
 
@@ -130,19 +139,55 @@ above monthly pipeline, does not replace it.
       required 政府資料開放授權條款-第1版 credit line)
 - [ ] Inline attribution anywhere company data is shown directly —
       explicitly deferred, not falsely marked done (per Session 11's
-      own corrections entry)
+      own corrections entry) — STILL TRUE as of 2026-08-13, unchanged.
 
 **Session 12 — Marketing Pages**
-- [x] Landing page explicitly states monthly cadence (this is now
-      partially superseded — see 2026-08-12 monetization-pivot
-      correction in the blueprint's Section 11: freshness-gated tiers
-      replace the original feature-gated free/paid framing, and
-      pricing copy needs revisiting to reflect daily/weekly/monthly
-      tiers rather than a flat "monthly" statement)
-- [x] Pricing page reflects Section 7 tier limits (same caveat as above)
+- [x] Landing page and pricing page **REDONE 2026-08-13** to reflect
+      the real 3-tier freshness-gated model (方案A free/ads/30+ day
+      data, 方案B NT$600/mo weekly-fresh, 方案C NT$1,300/mo daily-fresh)
+      — the original flat monthly-only copy from initial Session 12 is
+      fully superseded, not just noted as needing revision.
 - [x] Privacy/Terms pages exist and linked in nav
 - [x] All page copy in Traditional Chinese
 - [x] No marketing copy frames the product around its data source
+- **CAVEAT (still open as of 2026-08-13):** the pricing page's copy is
+  now accurate, but the backend logic that actually enforces which
+  tier sees which freshness of data does NOT exist yet anywhere in the
+  app. No query currently checks a user's subscription tier before
+  deciding what to show them. This is real, separate, unbuilt work —
+  do not assume the pricing page describes a working feature.
+
+## Corrections — 2026-08-13 (daily-ingestion review)
+
+`scripts/run-ingest-daily.ts` was reviewed for the first time this day
+and had one critical bug plus two real gaps, all fixed and verified
+against a live test run (ROC date 1150813, 137 companies, 0 failures):
+
+1. **CRITICAL:** `mapStatus()` matched `Company_Status_Desc` against
+   corrupted/garbled placeholder text that could never match real API
+   output — every row silently defaulted to `'active'` regardless of
+   true status, with no error or log trace. Fixed by deriving status
+   from GCIS's structured `Revoke_App_Date`/`Sus_Beg_Date`/`Sus_End_Date`
+   fields instead of text-matching at all, since only one status value
+   (核准設立 = active) had ever been confirmed against a real response —
+   guessing the dissolved/suspended text would have risked repeating
+   the same error class.
+2. `parseAddress()` was never called — `address_region`/`address_district`
+   stayed NULL for every daily-ingested row. Fixed; verified live (all
+   137 new rows from the test run had `address_region` populated; ~185
+   older rows from before the fix remain unparsed, a minor backfill
+   item, not urgent).
+3. The script read `process.env.NEON_DATABASE_URL`, inconsistent with
+   every other file in the codebase (`DATABASE_URL`) — confirmed via a
+   real failed local run. Fixed in both the script and
+   `ingest-daily.yml`'s `env:` block (mapped the existing
+   `NEON_DATABASE_URL` GitHub secret to `DATABASE_URL`, no new secret
+   created).
+
+Also fixed: `source_month` now uses the same "YYYY年MM月" format as the
+monthly pipeline (was raw comma-joined ROC dates). Added
+`gcis_daily_setup_query` to `lib/ingestion/sources.config.ts`'s
+`DATASET_SOURCES` so the admin dashboard's freshness table picks it up.
 
 ## Known open items carried into Session 13+
 
@@ -152,8 +197,9 @@ above monthly pipeline, does not replace it.
   at the bare path.
 - Session 11's inline-attribution objective remains genuinely
   incomplete, not just unchecked.
-- Session 12's pricing copy needs a rewrite once the freshness-tiered
-  model (2026-08-12 correction) is implemented in Session 18/19's scope.
-- A stray `cookies.txt` file is committed at the repo root (leftover
-  from manual API testing) — harmless but should be `.gitignore`d and
-  removed.
+- The freshness-tier enforcement logic (which tier sees which data)
+  is not built — see Session 12's caveat above. This, not "pricing
+  copy needs a rewrite," is the accurate current gap.
+- A stray `cookies.txt` file was previously noted as committed at the
+  repo root (leftover from manual API testing) — not independently
+  re-verified in this pass; check and `.gitignore` it if still present.
