@@ -1,55 +1,29 @@
-/**
- * scripts/run-ingest-daily.ts
- *
- * Standalone entrypoint, run via GitHub Actions on a daily cron
- * (.github/workflows/ingest-daily.yml).
- *
- * Pulls companies approved for setup on a given ROC date from GCIS's
- * open API (confirmed working unauthenticated — see blueprint
- * Section 11, "Session 13 pre-work, 2026-08-12" correction entry),
- * enriches each one with the full-profile endpoint, and upserts into
- * the `companies` table.
- *
- * Queries BOTH yesterday and today's date every run, not just today.
- * Reasons:
- *   1. T-0 (same-day) freshness is unconfirmed as of this writing —
- *      querying yesterday too guarantees no day is silently skipped
- *      if today's batch isn't fully processed by GCIS yet at 06:00 Taipei.
- *   2. The upsert is idempotent (ON CONFLICT DO UPDATE keyed on
- *      uniform_id), so re-querying a date we already have is harmless —
- *      it just re-confirms/updates existing rows, never duplicates.
- *
- * Run manually for a backfill:
- *   ROC_DATE=1150801 npx tsx scripts/run-ingest-daily.ts
- */
-
 import { neon } from "@neondatabase/serverless";
+import { parseAddress } from "../lib/parsing/address";
 
 const DISCOVERY_API =
   "https://data.gcis.nat.gov.tw/od/data/api/467E8A3A-72C6-4663-9557-D9D74C597E14";
 const PROFILE_API =
   "https://data.gcis.nat.gov.tw/od/data/api/5F64D864-61CB-4D0D-8AD9-492047CC1EA6";
 
-const PAGE_SIZE = 50; // confirmed working value from manual testing; raise later if needed
-const PROFILE_FETCH_DELAY_MS = 150; // gentle pacing across the N profile calls — see note at bottom
+const PAGE_SIZE = 50;
+const PROFILE_FETCH_DELAY_MS = 150;
 
-/**
- * The `companies` table's `status` column has a CHECK constraint allowing
- * only: active / changed / dissolved / suspended (see blueprint Section 5).
- * GCIS's Company_Status_Desc field returns raw Chinese text instead
- * (e.g. "核准設立") — inserting that directly violates the constraint and
- * fails every row. Map it here before it ever reaches the INSERT.
- */
-function mapStatus(gcisStatus: string | undefined): string {
-  if (!gcisStatus) return "active";
-  if (gcisStatus.includes("核准設立") || gcisStatus.includes("核准")) return "active";
-  if (gcisStatus.includes("解散")) return "dissolved";
-  if (gcisStatus.includes("停業") || gcisStatus.includes("歇業")) return "suspended";
-  console.warn(`Unmapped GCIS status "${gcisStatus}" — defaulted to 'active'`);
+function mapStatus(profile: ProfileRow): string {
+  if (profile.Revoke_App_Date && profile.Revoke_App_Date.trim() !== "") {
+    return "dissolved";
+  }
+  if (
+    profile.Sus_Beg_Date &&
+    profile.Sus_Beg_Date.trim() !== "" &&
+    (!profile.Sus_End_Date || profile.Sus_End_Date.trim() === "")
+  ) {
+    return "suspended";
+  }
   return "active";
 }
 
-const sql = neon(process.env.NEON_DATABASE_URL!);
+const sql = neon(process.env.DATABASE_URL!);
 
 interface DiscoveryRow {
   Business_Accounting_NO: string;
@@ -64,6 +38,9 @@ interface ProfileRow {
   Responsible_Name: string;
   Company_Location: string;
   Company_Setup_Date: string;
+  Revoke_App_Date: string;
+  Sus_Beg_Date: string;
+  Sus_End_Date: string;
 }
 
 function todayRocDate(): string {
@@ -82,6 +59,12 @@ function yesterdayRocDate(): string {
   const mm = String(taipei.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(taipei.getUTCDate()).padStart(2, "0");
   return `${rocYear}${mm}${dd}`;
+}
+
+function rocDateToYearMonthLabel(roc: string): string {
+  const rocYear = parseInt(roc.slice(0, roc.length - 4), 10);
+  const mm = roc.slice(-4, -2);
+  return `${rocYear + 1911}\u5e74${mm}\u6708`;
 }
 
 async function fetchDiscoveryPage(rocDate: string, skip: number): Promise<DiscoveryRow[]> {
@@ -139,6 +122,7 @@ async function ingestDate(rocDate: string, runStats: {
 }) {
   const discovered = await fetchAllForDate(rocDate);
   console.log(`${rocDate}: ${discovered.length} companies from discovery API`);
+  const sourceMonthLabel = rocDateToYearMonthLabel(rocDate);
 
   for (const row of discovered) {
     runStats.rowCount++;
@@ -147,6 +131,8 @@ async function ingestDate(rocDate: string, runStats: {
       await sleep(PROFILE_FETCH_DELAY_MS);
 
       const registrationDate = rocDateToIso(rocDate);
+      const rawAddress = profile?.Company_Location ?? null;
+      const { region, district } = parseAddress(rawAddress || "");
 
       const existing = await sql`
         SELECT uniform_id FROM companies WHERE uniform_id = ${row.Business_Accounting_NO}
@@ -156,27 +142,37 @@ async function ingestDate(rocDate: string, runStats: {
       await sql`
         INSERT INTO companies (
           uniform_id, entity_type, name, capital, address_raw,
-          responsible_person, registration_date, status, status_updated_at,
-          source_dataset
+          address_region, address_district, responsible_person,
+          registration_date, status, status_updated_at,
+          source_dataset, source_month
         ) VALUES (
           ${row.Business_Accounting_NO},
           'company',
           ${profile?.Company_Name ?? row.Company_Name},
           ${profile?.Capital_Stock_Amount ?? null},
-          ${profile?.Company_Location ?? null},
+          ${rawAddress},
+          ${region},
+          ${district},
           ${profile?.Responsible_Name ?? null},
           ${registrationDate},
-          ${mapStatus(profile?.Company_Status_Desc)},
+          ${profile ? mapStatus(profile) : "active"},
           now(),
-          'gcis_daily_setup_query'
+          'gcis_daily_setup_query',
+          ${sourceMonthLabel}
         )
         ON CONFLICT (uniform_id) DO UPDATE SET
           name = EXCLUDED.name,
           capital = EXCLUDED.capital,
           address_raw = EXCLUDED.address_raw,
+          address_region = EXCLUDED.address_region,
+          address_district = EXCLUDED.address_district,
           responsible_person = EXCLUDED.responsible_person,
           status = EXCLUDED.status,
-          status_updated_at = now()
+          status_updated_at = CASE
+            WHEN EXCLUDED.status <> companies.status THEN now()
+            ELSE companies.status_updated_at
+          END,
+          source_month = EXCLUDED.source_month
       `;
 
       if (isNew) runStats.newCount++;
@@ -214,7 +210,7 @@ async function main() {
       parse_failures, status, error_log, started_at, completed_at
     ) VALUES (
       'gcis_daily_setup_query',
-      ${dates.join(",")},
+      ${dates.map(rocDateToYearMonthLabel).join(",")},
       ${runStats.rowCount},
       ${runStats.newCount},
       ${runStats.updatedCount},

@@ -14,5 +14,6 @@ export const DATASET_SOURCES: DatasetSource[] = [
   { id: "company_dissolve", nameZh: "\u516c\u53f8\u89e3\u6563\u767b\u8a18\u6e05\u518a", datasetId: "6049", pageUrl: "https://data.gov.tw/dataset/6049", entityType: "company", changeType: "dissolve", expectedCadenceDays: 45 },
   { id: "business_new", nameZh: "\u5546\u696d\u8a2d\u7acb\u767b\u8a18\u6e05\u518a", datasetId: "6668", pageUrl: "https://data.gov.tw/dataset/6668", entityType: "business", changeType: "new", expectedCadenceDays: 45 },
   { id: "business_change", nameZh: "\u5546\u696d\u8b8a\u66f4\u767b\u8a18\u6e05\u518a", datasetId: "6669", pageUrl: "https://data.gov.tw/dataset/6669", entityType: "business", changeType: "change", expectedCadenceDays: 45 },
+  { id: "gcis_daily_setup_query", nameZh: "\u516c\u53f8\u6bcf\u65e5\u8a2d\u7acb\u67e5\u8a62", datasetId: "467E8A3A-72C6-4663-9557-D9D74C597E14", pageUrl: "https://data.gcis.nat.gov.tw/od/data/api/467E8A3A-72C6-4663-9557-D9D74C597E14", entityType: "company", changeType: "new", expectedCadenceDays: 2 },
   { id: "business_dissolve", nameZh: "\u5546\u696d\u6b47\u696d\u767b\u8a18\u6e05\u518a", datasetId: "6670", pageUrl: "https://data.gov.tw/dataset/6670", entityType: "business", changeType: "dissolve", expectedCadenceDays: 75 },
 ];

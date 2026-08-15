@@ -33,7 +33,7 @@ jobs:
 
       - name: Run daily ingestion
         env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: npx tsx scripts/run-ingest-daily.ts
 
       - name: Report failure
