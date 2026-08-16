@@ -189,6 +189,14 @@ monthly pipeline (was raw comma-joined ROC dates). Added
 `gcis_daily_setup_query` to `lib/ingestion/sources.config.ts`'s
 `DATASET_SOURCES` so the admin dashboard's freshness table picks it up.
 
+**Session 13 — Saved Search Filter Builder**
+- [x] Saved search form validates server-side, not just client-side —
+      `app/api/searches/route.ts` checks name length, capital_min/max
+      ordering, entity_type and cadence against allowed values
+- [x] A saved search can be created and appears correctly in the database
+- [x] All form labels, placeholders, and validation messages are
+      Traditional Chinese
+
 ## Known open items carried into Session 13+
 
 - `/searches` (bare index) is not a defined route anywhere in the

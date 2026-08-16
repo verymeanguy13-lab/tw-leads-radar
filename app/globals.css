@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @layer base {
   :root {
@@ -12,6 +12,7 @@
     --status-active: #16a34a;
     --status-dissolved: #dc2626;
     --status-changed: #d97706;
+    --status-suspended: #b45309;
   }
 
   html {
@@ -47,5 +48,8 @@
   }
   .status-changed {
     color: var(--status-changed);
+  }
+  .status-suspended {
+    color: var(--status-suspended);
   }
 }
