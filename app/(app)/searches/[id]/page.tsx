@@ -18,10 +18,10 @@ type SortKey = "registration_date" | "capital" | "address_region";
 type SortOrder = "asc" | "desc";
 
 const STATUS_LABEL: Record<string, string> = {
-  active: "營運中",
-  changed: "已異動",
-  dissolved: "已解散",
-  suspended: "停業中",
+  active: "??銝?,
+  changed: "撌脩??,
+  dissolved: "撌脰圾??,
+  suspended: "?平銝?,
 };
 
 const STATUS_CLASS: Record<string, string> = {
@@ -32,7 +32,7 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 // Attribution scope matches components/Footer.tsx's precedent: the 6
-// data.gov.tw open-data datasets carry the required 政府資料開放授權條款
+// data.gov.tw open-data datasets carry the required ?踹?鞈????璇狡
 // credit line. gcis_daily_setup_query is a live GCIS query API, not one
 // of those 6 licensed batch datasets, so it's excluded here the same way
 // Footer.tsx excludes it - unverified against GCIS's own terms, flagged
@@ -43,7 +43,7 @@ const ATTRIBUTION_NAME_ZH: Record<string, string> = Object.fromEntries(
     s.nameZh,
   ])
 );
-const ATTRIBUTION_AGENCY = "經濟部商業發展署";
+const ATTRIBUTION_AGENCY = "蝬??典?璆剔撅蔡";
 
 function parseSort(value: string | undefined): SortKey {
   if (value === "capital" || value === "address_region") return value;
@@ -142,7 +142,7 @@ function sortLink(
   const nextOrder: SortOrder =
     currentSort === key && currentOrder === "desc" ? "asc" : "desc";
   const indicator =
-    currentSort === key ? (currentOrder === "desc" ? " ▼" : " ▲") : "";
+    currentSort === key ? (currentOrder === "desc" ? " ?? : " ??) : "";
   return (
     <Link
       href={`${base}?sort=${key}&order=${nextOrder}`}
@@ -218,7 +218,7 @@ export default async function SearchResultsPage({
 
   // Per-row dissolved/suspended badges need their OWN recency, sourced from
   // that row's specific source_dataset - not the general line above, since
-  // 商業歇業登記清冊 runs ~2 months behind the others (see blueprint Section 11).
+  // ?平甇平?餉?皜? runs ~2 months behind the others (see blueprint Section 11).
   const flaggedDatasets = Array.from(
     new Set(
       rows
@@ -264,14 +264,13 @@ export default async function SearchResultsPage({
       <p
         className={`text-xs mb-6 ${isStale ? "status-changed font-medium" : "text-secondary"}`}
       >
-        資料更新日期：{lastGoodAt ? formatDate(lastGoodAt) : "尚無資料"}
-        {isStale && "（已超過預期更新週期，資料可能不是最新）"}
+        鞈??湔?交?嚗lastGoodAt ? formatDate(lastGoodAt) : "撠鞈?"}
+        {isStale && "嚗歇頞????湔?望?嚗???賭??舀??堆?"}
       </p>
 
       {totalMatches === 0 ? (
         <p className="text-secondary text-sm py-12 text-center">
-          目前沒有符合條件的結果，稍後再試或調整搜尋條件。
-        </p>
+          ?桀?瘝?蝚血?璇辣????蝔??岫?矽?湔?撠?隞嗚?        </p>
       ) : (
         <>
           {/* Desktop / tablet: table */}
@@ -279,19 +278,19 @@ export default async function SearchResultsPage({
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="border-b border-default text-left">
-                  <th className="py-2 pr-4">名稱</th>
-                  <th className="pr-4">統一編號</th>
+                  <th className="py-2 pr-4">?迂</th>
+                  <th className="pr-4">蝯曹?蝺刻?</th>
                   <th className="pr-4">
-                    {sortLink(basePath, "registration_date", sort, order, "登記日期")}
+                    {sortLink(basePath, "registration_date", sort, order, "?餉??交?")}
                   </th>
                   <th className="pr-4">
-                    {sortLink(basePath, "address_region", sort, order, "地址")}
+                    {sortLink(basePath, "address_region", sort, order, "?啣?")}
                   </th>
-                  <th className="pr-4">負責人</th>
+                  <th className="pr-4">鞎痊鈭?/th>
                   <th className="pr-4">
-                    {sortLink(basePath, "capital", sort, order, "資本額")}
+                    {sortLink(basePath, "capital", sort, order, "鞈憿?)}
                   </th>
-                  <th className="pr-4">狀態</th>
+                  <th className="pr-4">???/th>
                   <th></th>
                 </tr>
               </thead>
@@ -317,19 +316,19 @@ export default async function SearchResultsPage({
                         </span>
                         {(c.status === "dissolved" || c.status === "suspended") && freshAt && (
                           <div className="text-secondary text-xs">
-                            資料來源更新於：{formatDate(freshAt)}
+                            鞈?靘??湔?潘?{formatDate(freshAt)}
                           </div>
                         )}
                       </td>
                       <td>
-                        
+                        <a
                           href={mapsUrl(c.name, c.address_raw)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs hover:underline"
                           style={{ color: "var(--accent)" }}
                         >
-                          Google 地圖查詢
+                          Google ?啣??亥岷
                         </a>
                       </td>
                     </tr>
@@ -357,25 +356,25 @@ export default async function SearchResultsPage({
                     </span>
                   </div>
                   <div className="text-xs text-secondary space-y-1">
-                    <div>統一編號：{c.uniform_id}</div>
-                    <div>登記日期：{formatDate(c.registration_date)}</div>
+                    <div>蝯曹?蝺刻?嚗c.uniform_id}</div>
+                    <div>?餉??交?嚗formatDate(c.registration_date)}</div>
                     <div>
-                      地址：{c.address_region ?? "\u2014"} {c.address_raw ?? ""}
+                      ?啣?嚗c.address_region ?? "\u2014"} {c.address_raw ?? ""}
                     </div>
-                    <div>負責人：{c.responsible_person ?? "\u2014"}</div>
-                    <div>資本額：{formatCapital(c.capital)}</div>
+                    <div>鞎痊鈭綽?{c.responsible_person ?? "\u2014"}</div>
+                    <div>鞈憿?{formatCapital(c.capital)}</div>
                     {(c.status === "dissolved" || c.status === "suspended") && freshAt && (
-                      <div>資料來源更新於：{formatDate(freshAt)}</div>
+                      <div>鞈?靘??湔?潘?{formatDate(freshAt)}</div>
                     )}
                   </div>
-                  
+                  <a
                     href={mapsUrl(c.name, c.address_raw)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs hover:underline mt-2 inline-block"
                     style={{ color: "var(--accent)" }}
                   >
-                    Google 地圖查詢
+                    Google ?啣??亥岷
                   </a>
                 </div>
               );
@@ -384,7 +383,7 @@ export default async function SearchResultsPage({
 
           <div className="flex items-center justify-between mt-6 text-sm">
             <span className="text-secondary">
-              第 {page} 頁，共 {totalPages} 頁（{totalMatches} 筆結果）
+              蝚?{page} ????{totalPages} ??{totalMatches} 蝑???
             </span>
             <div className="flex gap-3">
               {page > 1 && (
@@ -392,16 +391,14 @@ export default async function SearchResultsPage({
                   href={`${basePath}?page=${page - 1}&sort=${sort}&order=${order}`}
                   className="hover:underline"
                 >
-                  上一頁
-                </Link>
+                  銝???                </Link>
               )}
               {page < totalPages && (
                 <Link
                   href={`${basePath}?page=${page + 1}&sort=${sort}&order=${order}`}
                   className="hover:underline"
                 >
-                  下一頁
-                </Link>
+                  銝???                </Link>
               )}
             </div>
           </div>
