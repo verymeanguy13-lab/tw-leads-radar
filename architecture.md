@@ -197,7 +197,43 @@ monthly pipeline (was raw comma-joined ROC dates). Added
 - [x] All form labels, placeholders, and validation messages are
       Traditional Chinese
 
-## Known open items carried into Session 13+
+**Session 14 — Results Table**
+- [x] Server-side pagination (20/page, `LIMIT`/`OFFSET` in SQL)
+- [x] "Run now" actually re-triggers matching for just that saved_search —
+      verified live, 773 real matches returned
+- [x] Column headers, status badges, empty state — Traditional Chinese
+- [x] Mobile (<768px): stacked cards, table `hidden` entirely below `md`
+- [x] "資料更新日期" line sourced from most recent successful `ingestion_runs`
+      row; dissolved/suspended badges carry their own recency note from
+      that row's specific `source_dataset`, separate from the general line
+- `lib/matching/engine.ts` (`matchSearch()`) was pulled forward from
+  Session 15 — Session 14's own "Run now" objective can't be satisfied
+  without it. It's idempotent (`ON CONFLICT DO NOTHING`) and deliberately
+  does not filter on `industry_codes` (always empty on every company row,
+  confirmed below Section 11 already). Session 15 only needs to add
+  `matchAllSearches()` for the cron job — don't rebuild `matchSearch()`.
+
+## Corrections — 2026-08-16 (region name mismatch)
+
+**Real, live bug found via manual testing, not a Session 14 defect —
+originated in Session 13's form.** `app/(app)/searches/new/page.tsx`'s
+`REGIONS` dropdown listed `台北市`/`台中市`/`台南市`/`台東縣` using the
+common 台 character variant. `companies.address_region` (populated by
+every ingestion script since Session 6) always uses the formal 臺
+variant — `臺北市`/`臺中市`/`臺南市`/`臺東縣`. Since these are different
+characters to Postgres, any saved search selecting one of those 4
+regions matched **zero companies, silently, with no error** — the "Run
+now" button and the empty-state message both looked completely normal.
+
+Fixed in `app/(app)/searches/new/page.tsx` (dropdown now uses 臺). Two
+saved searches created before the fix ("Test", 省身公司) had the wrong
+character baked into their `regions` column — corrected via a one-off
+`UPDATE ... array_replace(...)` in Neon's SQL editor, not a migration
+(no schema change, just bad data in existing rows). If any other saved
+searches exist from before 2026-08-16, check their `regions` column for
+the same 4 characters.
+
+## Known open items carried into Session 15+
 
 - `/searches` (bare index) is not a defined route anywhere in the
   blueprint — only `/searches/new` (Session 13) and `/searches/[id]`
@@ -211,3 +247,8 @@ monthly pipeline (was raw comma-joined ROC dates). Added
 - A stray `cookies.txt` file was previously noted as committed at the
   repo root (leftover from manual API testing) — not independently
   re-verified in this pass; check and `.gitignore` it if still present.
+- `middleware.ts` uses Next.js's deprecated "middleware" convention
+  (Next 16 wants "proxy" instead). Still works, just deprecated — low
+  priority, but it's the file guarding `/searches`, `/account`,
+  `/admin`, so don't let it linger indefinitely. Codemod available:
+  `npx @next/codemod@canary middleware-to-proxy .`
