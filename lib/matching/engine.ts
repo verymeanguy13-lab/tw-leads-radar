@@ -1,4 +1,4 @@
-﻿import { db } from "../db";
+import { db } from "../db";
 
 /**
  * Runs one saved_search's filters against companies and upserts any
