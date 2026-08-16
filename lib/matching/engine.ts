@@ -59,3 +59,60 @@ export async function matchSearch(searchId: string): Promise<number> {
 
   return inserted.length;
 }
+
+export interface MatchAllResult {
+  searchesRun: number;
+  searchesSkippedPaused: number;
+  totalNewMatches: number;
+  failures: { searchId: string; message: string }[];
+}
+
+/**
+ * Runs matchSearch() for every non-paused saved_search. Meant to be
+ * called after ingestion finishes (so newly-ingested companies get
+ * matched against everyone's filters promptly) and is what backs the
+ * manual per-search "Run now" button's underlying engine (Session 14),
+ * though that button itself calls matchSearch() directly for just its
+ * one search - this function is for the all-searches case.
+ *
+ * One search failing (e.g. a bad filter combination) does not stop the
+ * others - failures are collected and returned so the caller (a GitHub
+ * Actions script) can log them without the whole run aborting.
+ *
+ * Uses plain db(), not withUserContext - this necessarily needs every
+ * user's saved_searches at once, which withUserContext (scoped to one
+ * user per call) can't express. RLS is enabled on saved_searches and
+ * search_matches, but only via ENABLE ROW LEVEL SECURITY (not FORCE),
+ * so it does not restrict the table owner role this connection uses -
+ * consistent with matchSearch() already working the same way. This is
+ * a deliberate, safe use of db() for a trusted server-side job, not a
+ * bypass of anything meant to gate it.
+ */
+export async function matchAllSearches(): Promise<MatchAllResult> {
+  const sql = db();
+
+  const allSearches = await sql`SELECT id, paused FROM saved_searches`;
+  const activeSearches = (allSearches as { id: string; paused: boolean }[]).filter(
+    (s) => !s.paused
+  );
+  const skippedCount = allSearches.length - activeSearches.length;
+
+  let totalNewMatches = 0;
+  const failures: { searchId: string; message: string }[] = [];
+
+  for (const search of activeSearches) {
+    try {
+      totalNewMatches += await matchSearch(search.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push({ searchId: search.id, message });
+    }
+  }
+
+  return {
+    searchesRun: activeSearches.length,
+    searchesSkippedPaused: skippedCount,
+    totalNewMatches,
+    failures,
+  };
+}

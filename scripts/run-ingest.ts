@@ -3,6 +3,7 @@ import { normalizeFile } from "../lib/ingestion/normalize";
 import { upsertRows } from "../lib/ingestion/upsert";
 import { DATASET_SOURCES } from "../lib/ingestion/sources.config";
 import { db } from "../lib/db";
+import { matchAllSearches } from "../lib/matching/engine";
 
 async function main() {
   console.log("Starting ingestion run...");
@@ -62,6 +63,18 @@ async function main() {
   }
 
   console.log(`\nCompleted: ${successCount} succeeded, ${failures.length} failed.`);
+
+  console.log("\nRunning saved_search matching...");
+  const matchResult = await matchAllSearches();
+  console.log(
+    `  Matched ${matchResult.searchesRun} active saved_search(es) ` +
+    `(${matchResult.searchesSkippedPaused} paused, skipped): ` +
+    `${matchResult.totalNewMatches} new match(es) total.`
+  );
+  for (const f of matchResult.failures) {
+    console.error(`  FAIL matching saved_search ${f.searchId}: ${f.message}`);
+    failures.push(`matching ${f.searchId}: ${f.message}`);
+  }
 
   if (failures.length > 0) {
     process.exit(1);
