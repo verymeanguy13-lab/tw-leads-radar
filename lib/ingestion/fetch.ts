@@ -105,6 +105,11 @@ export async function fetchAllDatasets(): Promise<{ results: FetchResult[]; fail
   const failures: string[] = [];
 
   for (const source of DATASET_SOURCES) {
+    // See the matching comment in scripts/run-ingest.ts — this source is
+    // a live API endpoint handled by run-ingest-daily.ts, not a CSV
+    // dataset this function can fetch.
+    if (source.id === "gcis_daily_setup_query") continue;
+
     try {
       results.push(await fetchDataset(source));
     } catch (err) {

@@ -12,6 +12,14 @@ async function main() {
   const failures: string[] = [];
 
   for (const source of DATASET_SOURCES) {
+    // gcis_daily_setup_query is a live filterable API endpoint (GCIS
+    // $filter=Company_Setup_Date), not a data.gov.tw CSV dataset — it
+    // belongs in DATASET_SOURCES because the admin dashboard and this
+    // page's attribution logic both need it there, but it must NOT be
+    // fetched by this monthly CSV-scraping loop. It's handled entirely
+    // by the separate scripts/run-ingest-daily.ts.
+    if (source.id === "gcis_daily_setup_query") continue;
+
     let fetchResult;
     try {
       fetchResult = await fetchDataset(source);
