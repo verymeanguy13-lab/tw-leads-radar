@@ -213,7 +213,95 @@ monthly pipeline (was raw comma-joined ROC dates). Added
   confirmed below Section 11 already). Session 15 only needs to add
   `matchAllSearches()` for the cron job — don't rebuild `matchSearch()`.
 
-## Corrections — 2026-08-16 (region name mismatch)
+**Session 15 — Filter Matching Engine**
+- [x] `matchSearch()` correctly upserts into `search_matches` without
+      erroring on already-matched rows — already proven in Session 14
+      (773 real matches, `ON CONFLICT DO NOTHING`)
+- [x] `matchAllSearches()` skips paused saved_searches
+- Wired into `scripts/run-ingest.ts` — every monthly ingestion run now
+  automatically re-matches every active saved search, not just on manual
+  "Run now" clicks. Not wired into `run-ingest-daily.ts` — daily-cadence
+  saved searches don't exist yet (gated behind Session 19's tier system),
+  so that would be premature scope, not an oversight.
+- `matchAllSearches()` and `matchSearch()` both use plain `db()`, not
+  `withUserContext()`, despite `lib/db.ts`'s comment saying
+  `saved_searches`/`search_matches` should never be queried without it.
+  This is deliberate and safe, not a bug: RLS on those tables is enabled
+  via `ENABLE ROW LEVEL SECURITY` (not `FORCE`), so it does not restrict
+  the table-owner role this app's `DATABASE_URL` connects as. Both
+  functions genuinely need cross-user access (a saved-search-owning
+  cron job, not one user's request), which `withUserContext` structurally
+  can't express anyway. `lib/db.ts`'s comment is correct guidance for
+  user-facing request code, not an absolute rule — future sessions
+  should keep using `withUserContext` for anything request-scoped, but
+  don't assume `db()` on these tables is broken; it isn't.
+
+**Session 16 — Digest Emails**
+- [x] Only genuinely unsurfaced matches are ever sent — filtered on
+      `search_matches.surfaced_in_digest = false`, only marked `true`
+      after Resend confirms no `result.error` (per the magic-link
+      lesson below: Resend fails silently, never throws)
+- [x] Saved searches with zero new matches are skipped, not emailed
+      empty
+- [x] Runs standalone via GitHub Actions
+      (`npx tsx scripts/run-digest.ts`), not a Vercel route
+- [x] Weekly cron (`.github/workflows/digest.yml`, mirrors `ingest.yml`)
+- [x] Dissolved/suspended companies in the email carry their own
+      recency note, same principle as the Session 14 results table
+- `saved_searches.cadence` only supports `weekly`/`monthly` (see the
+  cadence discussion below) but the cron itself only runs weekly. A
+  `weekly` search is trivially due every run. A `monthly` search is
+  derived as due when its most recent `search_matches.surfaced_at` is
+  NULL or ≥28 days old — there's no `last_sent_at` column, this is
+  computed from `search_matches` each run.
+- 負責人 (responsible person) intentionally left out of the email content
+  — a deliberate choice, not a spec requirement (the blueprint doesn't
+  pin down exact email fields, unlike Session 14's table). One email per
+  saved search (not a combined digest) if a user has several due at once.
+- **Requires a `NEXTAUTH_URL` GitHub Actions secret** (used for the
+  "view full results" link in the email body) — did not exist before
+  this session, needs to be added manually in GitHub repo settings if
+  not already done.
+- Found and reused `app/api/auth/magic-link/route.ts` for the correct
+  Resend calling convention — it's dead code (not wired into
+  `lib/auth.ts`, which now only has Google/Facebook providers), leftover
+  from before the magic-link approach was replaced. Harmless, not fixed,
+  just flagged.
+
+## Cadence clarification (not a bug)
+
+`saved_searches.cadence` only allows `weekly`/`monthly` by design — this
+matches Section 7's own note that tier boundaries are "finalized before
+Session 18." A `daily` option (方案C, tied to the already-live
+`gcis_daily_setup_query` pipeline) is intentionally deferred to
+Session 19 (Tier Gating), not an oversight in Session 13's form.
+
+## Corrections — 2026-08-16 (monthly ingestion loop crash)
+
+`scripts/run-ingest.ts` iterated over every entry in `DATASET_SOURCES`,
+including `gcis_daily_setup_query` — but that source is a live filterable
+API endpoint (used only by `run-ingest-daily.ts`), not a data.gov.tw CSV
+dataset. Treating it like the other 6 caused `discover.ts` to fail with
+"no CSV links found" on every single monthly run, since June/July 2026,
+without actually blocking the 6 real datasets from succeeding (GitHub
+Actions still reported the whole job failed). Fixed by skipping
+`gcis_daily_setup_query` in both `scripts/run-ingest.ts`'s loop and the
+same latent (unused-but-present) bug in `lib/ingestion/fetch.ts`'s
+`fetchAllDatasets()`. Verified live: a re-run after the fix succeeded
+cleanly with July's backlog ingested (3,602+ new companies) and the
+"Running saved_search matching..." step now visible in the log.
+
+## Domain migration — 2026-08-16
+
+Production domain changed from `tw-leads-radar.vercel.app` to
+`taiwanleads.com` (Vercel nameservers, `www` as canonical). Resend
+domain verified (DKIM/SPF/MX via Vercel's Resend auto-configure
+integration) — `EMAIL_FROM` should now be `noreply@taiwanleads.com`,
+not the old `resend.dev` shared sender, which could only ever deliver
+to the account owner. `NEXTAUTH_URL` and Google/Facebook OAuth
+redirect URIs updated to match. Confirmed working: login (both
+providers), site load, and DNS all verified live after the switch.
+
 
 **Real, live bug found via manual testing, not a Session 14 defect —
 originated in Session 13's form.** `app/(app)/searches/new/page.tsx`'s
@@ -233,8 +321,13 @@ character baked into their `regions` column — corrected via a one-off
 searches exist from before 2026-08-16, check their `regions` column for
 the same 4 characters.
 
-## Known open items carried into Session 15+
+## Known open items carried into Session 17+
 
+- CSV export (Session 20) is not built yet — users can only browse the
+  results table or click through to Google Maps per row, no download.
+- If the `NEXTAUTH_URL` GitHub Actions secret from Session 16 wasn't
+  actually added yet, the digest email's "view full results" link will
+  be broken even though sending itself works fine.
 - `/searches` (bare index) is not a defined route anywhere in the
   blueprint — only `/searches/new` (Session 13) and `/searches/[id]`
   (Session 14) are ever specified. Not a bug; just don't expect a page
