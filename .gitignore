@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# leftover manual curl testing artifacts
+cookies.txt
+*.cookie
