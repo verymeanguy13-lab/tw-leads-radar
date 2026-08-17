@@ -125,6 +125,9 @@ function renderCompanyRow(
           ${c.address_region ?? "-"}　${c.address_raw ?? ""}
         </div>
         <div style="color:#6b7280;font-size:13px;">
+          負責人：${c.responsible_person ?? "-"}
+        </div>
+        <div style="color:#6b7280;font-size:13px;">
           資本額：${formatCapital(c.capital)}　狀態：${statusLabel}${freshnessNote}
         </div>
         <div style="font-size:13px;margin-top:4px;">
