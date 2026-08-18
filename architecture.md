@@ -321,6 +321,55 @@ character baked into their `regions` column — corrected via a one-off
 searches exist from before 2026-08-16, check their `regions` column for
 the same 4 characters.
 
+## Custom feature — 2026-08-18 (Email/password signup + verification)
+
+**Not part of the original blueprint's 24 numbered sessions** — requested
+directly, outside the session plan. Logged here for the same reason
+everything else is: so a future session (or a future me) has the full
+picture.
+
+- Facebook login removed entirely (`lib/auth.ts`, `/login` page) — too
+  much signup friction, per direct instruction. `authOptions.providers`
+  is now exactly `['google', 'credentials']`, verified at runtime.
+- Added email/password signup (`app/api/auth/signup/route.ts`,
+  `app/(marketing)/signup/page.tsx`) with server-side validation
+  (email format, password ≥8 chars, required business name/type) and
+  bcrypt password hashing (12 rounds, `bcryptjs` - pure JS, no native
+  compile step).
+- `users` table gained 6 new nullable columns across two pushes:
+  `password_hash`, `business_name`, `business_type` (signup itself),
+  then `email_verified_at`, `verification_token_hash`,
+  `verification_token_expires_at` (verification, added right after -
+  the first version had no verification step at all, shipped, then
+  corrected same-day once the gap was noticed).
+- Email verification: SHA-256-hashed tokens (never the raw token) with
+  a 24-hour expiry, sent via Resend
+  (`lib/email/verification.ts`, reusing the established
+  check-`result.error`-explicitly convention from Session 16's digest
+  code). Login is blocked for unverified credentials accounts (a
+  distinct `EmailNotVerified` error, not the generic wrong-password
+  one) with a working resend button. Google accounts are auto-verified
+  on first sign-in - Google already confirms email ownership, so
+  there's no reason to make those users verify twice.
+- `app/api/auth/resend-verification/route.ts` deliberately never
+  reveals whether an email exists or is already verified - same
+  response either way, to prevent account enumeration.
+- Verified with the same rigor as every blueprint session: full clone,
+  `tsc`, `eslint`, a runtime module-load check, and a full `next build`
+  - all clean except the same two pre-existing unrelated errors
+  (`layout.tsx`'s `LayoutProps`, one `any` in `lib/auth.ts` that
+  predates this work). Manually tested live end-to-end (signup → block
+  before verifying → email arrives → click link → verified banner →
+  login works) - all 5 steps confirmed working.
+- **Not built:** no cleanup for accounts that sign up but never click
+  the verification link - they sit unverified forever with no expiry
+  sweep. Low priority at current volume, flagged for whenever it
+  becomes worth doing.
+- **Not updated:** the homepage's "免費開始使用" button still links to
+  `/login`, not the new `/signup` - low priority, but worth pointing
+  new visitors at the actual signup flow instead of making them find
+  the "還沒有帳號？註冊" link themselves.
+
 ## Known open items carried into Session 17+
 
 - CSV export (Session 20) is not built yet — users can only browse the
@@ -337,11 +386,12 @@ the same 4 characters.
 - The freshness-tier enforcement logic (which tier sees which data)
   is not built — see Session 12's caveat above. This, not "pricing
   copy needs a rewrite," is the accurate current gap.
-- A stray `cookies.txt` file was previously noted as committed at the
-  repo root (leftover from manual API testing) — not independently
-  re-verified in this pass; check and `.gitignore` it if still present.
 - `middleware.ts` uses Next.js's deprecated "middleware" convention
   (Next 16 wants "proxy" instead). Still works, just deprecated — low
   priority, but it's the file guarding `/searches`, `/account`,
   `/admin`, so don't let it linger indefinitely. Codemod available:
   `npx @next/codemod@canary middleware-to-proxy .`
+- Unverified signups (email/password) never expire or get cleaned up —
+  see the custom feature entry above.
+- Homepage's "免費開始使用" button still points at `/login` instead of
+  the newer `/signup` — see the custom feature entry above.
