@@ -11,7 +11,7 @@ export default function LandingPage() {
           {"\u4f9d\u7522\u696d\u5225\u3001\u5730\u5340\u3001\u8cc7\u672c\u984d\u7be9\u9078\u65b0\u8a2d\u7acb\u516c\u53f8\uff0c\u4f9d\u65b9\u6848\u4e0d\u540c\uff0c\u6700\u5feb\u53ef\u638c\u63e1\u524d\u4e00\u65e5\u6700\u65b0\u8cc7\u6599\u3002"}
         </p>
         <Link
-          href="/login"
+          href="/signup"
           className="inline-block bg-[var(--accent)] text-white rounded px-8 py-3 font-semibold"
         >
           {"\u514d\u8cbb\u958b\u59cb\u4f7f\u7528"}
