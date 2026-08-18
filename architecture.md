@@ -370,7 +370,30 @@ picture.
   new visitors at the actual signup flow instead of making them find
   the "還沒有帳號？註冊" link themselves.
 
-## Known open items carried into Session 17+
+**Session 17 — Status / Staleness Flagging**
+- [x] A dissolved/changed company already in a saved_search's results
+      shows a visible flag in both the results table and the digest
+      email
+- No schema changes — used `search_matches.matched_at` and
+  `companies.status_updated_at`, both already existed. A row is
+  flagged when `status_updated_at > matched_at` (results table) or
+  `status_updated_at > surfaced_at` (digest email) and the current
+  status is `dissolved` or `changed` (not `suspended` — matches the
+  blueprint's exact objective wording).
+- Digest email gained a second possible section, 狀態異動通知, separate
+  from 新符合結果. A saved search can now trigger a digest send purely
+  from a status change, even with zero brand-new matches — worth
+  knowing a tracked company dissolved even without new leads that
+  week. After sending, a status-change row's `surfaced_at` resets, so
+  the same change isn't re-flagged every subsequent run — only a
+  further change would trigger it again.
+- Distinct visually from the existing dissolved/suspended
+  data-source-freshness note (Session 14/16) — that note answers "how
+  fresh is the source data," this one answers "did this change since
+  you started tracking it." Both can show on the same row if
+  applicable.
+
+## Known open items carried into Session 18+
 
 - CSV export (Session 20) is not built yet — users can only browse the
   results table or click through to Google Maps per row, no download.
