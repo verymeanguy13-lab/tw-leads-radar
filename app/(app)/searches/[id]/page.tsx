@@ -71,7 +71,7 @@ async function fetchPage(
   switch (key) {
     case "registration_date_asc":
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -80,7 +80,7 @@ async function fetchPage(
       `;
     case "capital_desc":
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -89,7 +89,7 @@ async function fetchPage(
       `;
     case "capital_asc":
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -98,7 +98,7 @@ async function fetchPage(
       `;
     case "address_region_desc":
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -107,7 +107,7 @@ async function fetchPage(
       `;
     case "address_region_asc":
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -117,7 +117,7 @@ async function fetchPage(
     case "registration_date_desc":
     default:
       return sql`
-        SELECT c.*, count(*) OVER() AS total_count
+        SELECT c.*, sm.matched_at, count(*) OVER() AS total_count
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
@@ -130,6 +130,17 @@ async function fetchPage(
 function mapsUrl(name: string, address: string | null) {
   const query = encodeURIComponent(`${name} ${address ?? ""}`.trim());
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
+}
+
+// Session 17: flags a company whose status has changed to dissolved or
+// changed AFTER it first matched this saved_search - i.e. it looked
+// different (usually active) when the user first saw it. Distinct from
+// the existing dissolved/suspended freshness note above, which is about
+// data-source recency, not "this changed since you started tracking it."
+function isChangedSinceMatched(c: Company & { matched_at: string }): boolean {
+  if (c.status !== "dissolved" && c.status !== "changed") return false;
+  if (!c.status_updated_at || !c.matched_at) return false;
+  return new Date(c.status_updated_at) > new Date(c.matched_at);
 }
 
 function sortLink(
@@ -198,7 +209,7 @@ export default async function SearchResultsPage({
     order,
     PAGE_SIZE,
     offset
-  )) as (Company & { total_count: string })[];
+  )) as (Company & { total_count: string; matched_at: string })[];
 
   const totalMatches = rows[0] ? Number(rows[0].total_count) : 0;
   const totalPages = Math.max(1, Math.ceil(totalMatches / PAGE_SIZE));
@@ -320,6 +331,11 @@ export default async function SearchResultsPage({
                             資料來源更新於：{formatDate(freshAt)}
                           </div>
                         )}
+                        {isChangedSinceMatched(c) && (
+                          <div className="status-changed text-xs font-medium mt-0.5">
+                            ⚠ 狀態自加入追蹤後已變更
+                          </div>
+                        )}
                       </td>
                       <td>
                         <a
@@ -356,6 +372,11 @@ export default async function SearchResultsPage({
                       {STATUS_LABEL[c.status] ?? c.status}
                     </span>
                   </div>
+                  {isChangedSinceMatched(c) && (
+                    <div className="status-changed text-xs font-medium mb-2">
+                      ⚠ 狀態自加入追蹤後已變更
+                    </div>
+                  )}
                   <div className="text-xs text-secondary space-y-1">
                     <div>統一編號：{c.uniform_id}</div>
                     <div>登記日期：{formatDate(c.registration_date)}</div>

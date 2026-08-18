@@ -31,6 +31,7 @@ export interface DigestSendResult {
   searchName: string;
   sent: boolean;
   matchCount: number;
+  statusChangedCount: number;
   error?: string;
 }
 
@@ -105,7 +106,8 @@ function mapsUrl(name: string, address: string | null) {
 
 function renderCompanyRow(
   c: Company,
-  freshness: Map<string, string>
+  freshness: Map<string, string>,
+  options: { statusChangeNotice?: boolean } = {}
 ): string {
   const statusLabel = STATUS_LABEL[c.status] ?? c.status;
   const freshAt = c.source_dataset ? freshness.get(c.source_dataset) : undefined;
@@ -113,6 +115,13 @@ function renderCompanyRow(
     (c.status === "dissolved" || c.status === "suspended") && freshAt
       ? `<br/><span style="color:#6b7280;font-size:12px;">資料來源更新於：${formatDate(freshAt)}</span>`
       : "";
+  // Session 17: a distinct notice for rows in the "status changed" section,
+  // separate from the dissolved/suspended data-source freshness note above -
+  // this answers a different question (this changed since you started
+  // tracking it, not how fresh the source data is).
+  const changeNotice = options.statusChangeNotice
+    ? `<br/><span style="color:#b45309;font-size:12px;font-weight:600;">⚠ 狀態自加入追蹤後已變更</span>`
+    : "";
 
   return `
     <tr>
@@ -128,7 +137,7 @@ function renderCompanyRow(
           負責人：${c.responsible_person ?? "-"}
         </div>
         <div style="color:#6b7280;font-size:13px;">
-          資本額：${formatCapital(c.capital)}　狀態：${statusLabel}${freshnessNote}
+          資本額：${formatCapital(c.capital)}　狀態：${statusLabel}${freshnessNote}${changeNotice}
         </div>
         <div style="font-size:13px;margin-top:4px;">
           <a href="${mapsUrl(c.name, c.address_raw)}" style="color:#2563eb;">Google 地圖查詢</a>
@@ -139,14 +148,16 @@ function renderCompanyRow(
 }
 
 /**
- * Sends the digest for one saved_search if it has unsurfaced matches.
- * Returns sent:false (not an error) when there's simply nothing new -
- * per Session 16's objective, empty searches are skipped, not emailed.
+ * Sends the digest for one saved_search if it has unsurfaced matches
+ * OR previously-surfaced matches whose status has since changed to
+ * dissolved/changed (Session 17). Returns sent:false (not an error)
+ * when there's genuinely nothing to report - per Session 16's
+ * objective, empty searches stay skipped, not emailed.
  */
 export async function sendDigestForSearch(search: DueSearch): Promise<DigestSendResult> {
   const sql = db();
 
-  const matches = await sql`
+  const newMatches = await sql`
     SELECT c.*, sm.id AS match_id
     FROM search_matches sm
     JOIN companies c ON c.uniform_id = sm.company_uniform_id
@@ -154,15 +165,34 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
     ORDER BY c.registration_date DESC NULLS LAST
   `;
 
-  if (matches.length === 0) {
-    return { searchId: search.id, searchName: search.name, sent: false, matchCount: 0 };
+  const changedMatches = await sql`
+    SELECT c.*, sm.id AS match_id
+    FROM search_matches sm
+    JOIN companies c ON c.uniform_id = sm.company_uniform_id
+    WHERE sm.saved_search_id = ${search.id}
+      AND sm.surfaced_in_digest = true
+      AND (c.status = 'dissolved' OR c.status = 'changed')
+      AND c.status_updated_at > sm.surfaced_at
+    ORDER BY c.status_updated_at DESC
+  `;
+
+  const newRows = newMatches as (Company & { match_id: string })[];
+  const changedRows = changedMatches as (Company & { match_id: string })[];
+
+  if (newRows.length === 0 && changedRows.length === 0) {
+    return {
+      searchId: search.id,
+      searchName: search.name,
+      sent: false,
+      matchCount: 0,
+      statusChangedCount: 0,
+    };
   }
 
-  const rows = matches as (Company & { match_id: string })[];
-
+  const allRows = [...newRows, ...changedRows];
   const flaggedDatasets = Array.from(
     new Set(
-      rows
+      allRows
         .filter((r) => r.status === "dissolved" || r.status === "suspended")
         .map((r) => r.source_dataset)
         .filter((d): d is string => !!d)
@@ -170,15 +200,34 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   );
   const freshness = await getDatasetFreshness(flaggedDatasets);
 
-  const rowsHtml = rows.map((r) => renderCompanyRow(r, freshness)).join("");
+  const newRowsHtml = newRows.map((r) => renderCompanyRow(r, freshness)).join("");
+  const changedRowsHtml = changedRows
+    .map((r) => renderCompanyRow(r, freshness, { statusChangeNotice: true }))
+    .join("");
+
+  const subjectParts: string[] = [];
+  if (newRows.length > 0) subjectParts.push(`${newRows.length} 筆新符合結果`);
+  if (changedRows.length > 0) subjectParts.push(`${changedRows.length} 筆狀態異動`);
+  const subjectSummary = subjectParts.join("、");
+
+  const sectionsHtml = `
+    ${
+      newRows.length > 0
+        ? `<h3 style="margin-bottom:4px;">新符合結果</h3><table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${newRowsHtml}</table>`
+        : ""
+    }
+    ${
+      changedRows.length > 0
+        ? `<h3 style="margin-bottom:4px;">狀態異動通知</h3><table style="width:100%;border-collapse:collapse;">${changedRowsHtml}</table>`
+        : ""
+    }
+  `;
 
   const html = `
     <div style="font-family:sans-serif;color:#1a1d23;max-width:600px;">
-      <h2 style="margin-bottom:4px;">「${search.name}」有 ${rows.length} 筆新符合結果</h2>
+      <h2 style="margin-bottom:4px;">「${search.name}」有 ${subjectSummary}</h2>
       <p style="color:#6b7280;font-size:13px;margin-top:0;">新公司快報</p>
-      <table style="width:100%;border-collapse:collapse;">
-        ${rowsHtml}
-      </table>
+      ${sectionsHtml}
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">
         登入查看完整結果：<a href="${process.env.NEXTAUTH_URL}/searches/${search.id}" style="color:#2563eb;">taiwanleads.com</a>
       </p>
@@ -188,7 +237,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   const result = await resend.emails.send({
     from: process.env.EMAIL_FROM || "onboarding@resend.dev",
     to: search.userEmail,
-    subject: `「${search.name}」有 ${rows.length} 筆新符合結果 — 新公司快報`,
+    subject: `「${search.name}」有 ${subjectSummary} — 新公司快報`,
     html,
   });
 
@@ -197,17 +246,37 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       searchId: search.id,
       searchName: search.name,
       sent: false,
-      matchCount: rows.length,
+      matchCount: newRows.length,
+      statusChangedCount: changedRows.length,
       error: result.error.message,
     };
   }
 
-  const matchIds = rows.map((r) => r.match_id);
-  await sql`
-    UPDATE search_matches
-    SET surfaced_in_digest = true, surfaced_at = now()
-    WHERE id = ANY(${matchIds}::uuid[])
-  `;
+  if (newRows.length > 0) {
+    const newMatchIds = newRows.map((r) => r.match_id);
+    await sql`
+      UPDATE search_matches
+      SET surfaced_in_digest = true, surfaced_at = now()
+      WHERE id = ANY(${newMatchIds}::uuid[])
+    `;
+  }
+  if (changedRows.length > 0) {
+    // Reset the change-tracking window so the same status change isn't
+    // flagged again next run - only a further change after this point
+    // would trigger the notice again.
+    const changedMatchIds = changedRows.map((r) => r.match_id);
+    await sql`
+      UPDATE search_matches
+      SET surfaced_at = now()
+      WHERE id = ANY(${changedMatchIds}::uuid[])
+    `;
+  }
 
-  return { searchId: search.id, searchName: search.name, sent: true, matchCount: rows.length };
+  return {
+    searchId: search.id,
+    searchName: search.name,
+    sent: true,
+    matchCount: newRows.length,
+    statusChangedCount: changedRows.length,
+  };
 }

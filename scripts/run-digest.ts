@@ -17,16 +17,19 @@ async function main() {
       console.error(`  FAIL "${result.searchName}" (${result.searchId}): ${result.error}`);
       failures.push(`${result.searchId}: ${result.error}`);
     } else if (result.sent) {
-      console.log(`  OK "${result.searchName}": sent, ${result.matchCount} match(es)`);
+      console.log(
+        `  OK "${result.searchName}": sent, ${result.matchCount} new match(es), ` +
+        `${result.statusChangedCount} status change(s)`
+      );
       sentCount++;
     } else {
-      console.log(`  SKIP "${result.searchName}": no new matches`);
+      console.log(`  SKIP "${result.searchName}": nothing new to report`);
       skippedCount++;
     }
   }
 
   console.log(
-    `\nCompleted: ${sentCount} sent, ${skippedCount} skipped (no new matches), ${failures.length} failed.`
+    `\nCompleted: ${sentCount} sent, ${skippedCount} skipped (nothing new), ${failures.length} failed.`
   );
 
   if (failures.length > 0) {
