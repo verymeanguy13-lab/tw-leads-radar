@@ -1,6 +1,6 @@
 "use client";
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 
 const BUSINESS_TYPES = [
@@ -15,7 +15,6 @@ const BUSINESS_TYPES = [
 ];
 
 function SignupForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/searches/new";
 
@@ -25,6 +24,8 @@ function SignupForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,27 +39,48 @@ function SignupForm() {
     });
     const data = await res.json();
 
-    if (!res.ok) {
-      setError(data.error ?? "建立帳號時發生錯誤，請稍後再試。");
-      setSubmitting(false);
-      return;
-    }
-
-    const signInResult = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
     setSubmitting(false);
 
-    if (signInResult?.error) {
-      // Account created but auto-login failed - send them to log in manually.
-      router.push("/login");
+    if (!res.ok) {
+      setError(data.error ?? "建立帳號時發生錯誤，請稍後再試。");
       return;
     }
 
-    router.push(callbackUrl);
+    setSubmittedEmail(email);
+  }
+
+  async function handleResend() {
+    if (!submittedEmail) return;
+    setResendState("sending");
+    await fetch("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: submittedEmail }),
+    });
+    setResendState("sent");
+  }
+
+  if (submittedEmail) {
+    return (
+      <div className="p-8 max-w-sm mx-auto">
+        <div className="bg-card border border-default rounded-lg p-6 text-center">
+          <h1 className="text-xl font-bold mb-3">請驗證您的電子郵件</h1>
+          <p className="text-secondary text-sm mb-4">
+            我們已寄送驗證連結至 <span className="font-medium">{submittedEmail}</span>
+            ，請點選郵件中的連結以完成帳號設定。
+          </p>
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resendState !== "idle"}
+            className="text-sm hover:underline disabled:opacity-50"
+            style={{ color: "var(--accent)" }}
+          >
+            {resendState === "sent" ? "已重新寄送" : "沒有收到郵件？重新寄送"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

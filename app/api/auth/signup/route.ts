@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { sendVerificationEmail } from "@/lib/email/verification";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -41,18 +42,29 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await bcrypt.hash(password, 12);
 
+  let userId: string;
   try {
-    await sql`
+    const inserted = await sql`
       INSERT INTO users (email, name, password_hash, business_name, business_type)
       VALUES (${email}, ${businessName}, ${passwordHash}, ${businessName}, ${businessType})
+      RETURNING id
     `;
+    userId = inserted[0].id;
   } catch (err) {
-    // 23505 = unique_violation - two signups for the same email raced
-    // past the SELECT check above at the same time.
     if (err && typeof err === "object" && "code" in err && err.code === "23505") {
       return NextResponse.json({ error: "此電子郵件已被使用，請直接登入。" }, { status: 409 });
     }
     return NextResponse.json({ error: "建立帳號時發生錯誤，請稍後再試。" }, { status: 500 });
+  }
+
+  const emailResult = await sendVerificationEmail(userId, email);
+  if (emailResult.error) {
+    // Account exists but the verification email failed to send - don't
+    // fail the signup itself, the person can use "resend" afterward.
+    return NextResponse.json(
+      { success: true, emailWarning: true },
+      { status: 201 }
+    );
   }
 
   return NextResponse.json({ success: true }, { status: 201 });

@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT,
     business_name TEXT,
     business_type TEXT,
+    email_verified_at TIMESTAMPTZ,
+    verification_token_hash TEXT,
+    verification_token_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
