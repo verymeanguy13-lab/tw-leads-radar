@@ -365,10 +365,9 @@ picture.
   the verification link - they sit unverified forever with no expiry
   sweep. Low priority at current volume, flagged for whenever it
   becomes worth doing.
-- **Not updated:** the homepage's "免費開始使用" button still links to
-  `/login`, not the new `/signup` - low priority, but worth pointing
-  new visitors at the actual signup flow instead of making them find
-  the "還沒有帳號？註冊" link themselves.
+- **Fixed same day, shortly after this was logged:** the homepage's
+  "免費開始使用" button was pointing at `/login` instead of the new
+  `/signup` - corrected and confirmed live.
 
 **Session 17 — Status / Staleness Flagging**
 - [x] A dissolved/changed company already in a saved_search's results
@@ -393,7 +392,61 @@ picture.
   you started tracking it." Both can show on the same row if
   applicable.
 
-## Known open items carried into Session 18+
+**Session 18 — Paddle Integration**
+- [x] Full checkout + webhook loop tested and working in Paddle SANDBOX —
+      verified live with a real test transaction, not just code review
+- [x] `subscriptions.tier` updates correctly on the relevant webhook
+      events (`subscription.created`/`activated`/`updated`/`canceled`,
+      `transaction.payment_failed`)
+- [x] Checkout button has double-submit protection, verified with an
+      actual rapid multi-click test (only one overlay ever opened)
+- Uses a fresh Paddle account (the "Ching" and the support-created
+  duplicate accounts were both abandoned — see the personal-account-setup
+  discussion earlier this session, not repeated here since it's Paddle
+  account admin, not app code).
+- `app/api/webhooks/paddle/route.ts` verifies the `Paddle-Signature`
+  header manually (HMAC-SHA256 over `${ts}:${rawBody}`, `timingSafeEqual`
+  comparison) rather than pulling in the Paddle SDK — no new dependency,
+  matches the project's existing lean-dependency style. Verified against
+  5 real HMAC test cases (valid, wrong secret, tampered body, malformed
+  header, stale timestamp) before ever touching real credentials.
+  Timestamp tolerance is 5 minutes, not Paddle's own SDK default of 5
+  seconds — deliberately looser to avoid false-rejecting legitimate
+  webhooks over ordinary network delay; the HMAC match is the real
+  security guarantee, the timestamp check is defense-in-depth against
+  replay only.
+- User linkage uses `customData: { userId }` passed at checkout time,
+  echoed back in the webhook payload — not email matching, which could
+  break on a typo or a different email used at Paddle checkout vs. the
+  app account.
+- Price → tier mapping is a lookup built from the 4
+  `NEXT_PUBLIC_PADDLE_PRICE_*` env vars (B monthly/yearly → `pro`, C
+  monthly/yearly → `business`) — if a 5th price or tier is ever added,
+  this map needs updating too, it doesn't infer tier from price amount
+  or name.
+- **Two real bugs found only by testing live, not by writing/reviewing
+  the code:**
+  1. Checkout failed with `transaction_default_checkout_url_not_set`
+     until a Default Payment Link was set in Paddle's dashboard
+     (Checkout → Checkout Settings) — a one-time Paddle account
+     configuration step, not something fixable in app code.
+  2. The webhook silently failed every delivery (`308` response) because
+     the webhook URL was registered as `taiwanleads.com` while the site's
+     own DNS setup 308-redirects that bare domain to `www.taiwanleads.com`
+     — Paddle does not follow redirects for webhook delivery. Fixed by
+     registering the webhook against the `www` URL directly. Worth
+     remembering for any *other* external service that calls this app's
+     URLs directly (not through a browser, which follows redirects
+     transparently) — always use the `www` form for server-to-server
+     callback URLs.
+- Not built this session, deliberately out of scope per the objectives
+  checklist: 統一編號/VAT ID capture at checkout for B2B reverse-charge
+  (mentioned in Section 7 as a general principle, not a Session 18
+  checklist item) — flagged below as an open item rather than built
+  prematurely.
+- No schema changes — `subscriptions` already had every column needed.
+
+## Known open items carried into Session 19+
 
 - CSV export (Session 20) is not built yet — users can only browse the
   results table or click through to Google Maps per row, no download.
@@ -416,5 +469,11 @@ picture.
   `npx @next/codemod@canary middleware-to-proxy .`
 - Unverified signups (email/password) never expire or get cleaned up —
   see the custom feature entry above.
-- Homepage's "免費開始使用" button still points at `/login` instead of
-  the newer `/signup` — see the custom feature entry above.
+- 統一編號/VAT ID capture at checkout (B2B reverse-charge VAT, per
+  Section 7) is not built — see the Session 18 entry above.
+- Tier gating (Session 19) doesn't exist yet — a user can now genuinely
+  subscribe and pay via Paddle, but nothing in the app actually checks
+  `subscriptions.tier` to unlock anything yet. Paying currently buys
+  nothing functionally different. This is the very next session, not
+  a bug, but worth being aware of if anyone actually subscribes before
+  Session 19 ships.
