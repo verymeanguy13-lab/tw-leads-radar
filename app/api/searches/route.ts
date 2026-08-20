@@ -2,14 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getUserTier, canCreateSavedSearch, isCadenceAllowed } from "@/lib/tiers";
 
 const VALID_ENTITY_TYPES = ["company", "business", "both"];
 const VALID_CADENCE = ["weekly", "monthly"];
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  if (!session?.user?.email) {
     return NextResponse.json({ errors: { _general: "請先登入。" } }, { status: 401 });
+  }
+
+  const sql = db();
+  const userRows = await sql`SELECT id FROM users WHERE email = ${session.user.email}`;
+  const userId = userRows[0]?.id as string | undefined;
+  if (!userId) {
+    return NextResponse.json({ errors: { _general: "找不到使用者。" } }, { status: 401 });
   }
 
   const body = await req.json();
@@ -56,13 +64,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ errors }, { status: 400 });
   }
 
-  const sql = db();
+  // Tier gating (Session 19) - both checks are server-side and cannot be
+  // bypassed by skipping the UI, since they run here regardless of what
+  // called this route.
+  const tier = await getUserTier(userId);
+
+  if (!isCadenceAllowed(tier, cadence)) {
+    return NextResponse.json(
+      { errors: { cadence: "免費方案僅支援每週通知，請升級方案以使用每月通知。" } },
+      { status: 403 }
+    );
+  }
+
+  const limitCheck = await canCreateSavedSearch(userId);
+  if (!limitCheck.allowed) {
+    return NextResponse.json(
+      { errors: { _general: limitCheck.reason } },
+      { status: 403 }
+    );
+  }
+
   const rows = await sql`
     INSERT INTO saved_searches (
       user_id, name, industry_codes, regions, capital_min, capital_max,
       entity_type, keyword, cadence, paused
     ) VALUES (
-      (SELECT id FROM users WHERE email = ${session.user.email}),
+      ${userId},
       ${name}, ${industryCodes}, ${regions}, ${capitalMin}, ${capitalMax},
       ${entityType}, ${keyword || null}, ${cadence}, false
     )
