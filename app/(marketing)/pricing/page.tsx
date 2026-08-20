@@ -1,6 +1,22 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { db } from "@/lib/db";
+import CheckoutButton from "@/components/CheckoutButton";
 
-export default function PricingPage() {
+export const dynamic = "force-dynamic";
+
+export default async function PricingPage() {
+  const session = await getServerSession(authOptions);
+  let userId: string | null = null;
+  const userEmail = session?.user?.email ?? null;
+
+  if (userEmail) {
+    const sql = db();
+    const rows = await sql`SELECT id FROM users WHERE email = ${userEmail}`;
+    userId = rows[0]?.id ?? null;
+  }
+
   return (
     <div className="px-8 py-16 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-10 text-center">{"\u5b9a\u50f9"}</h1>
@@ -35,9 +51,14 @@ export default function PricingPage() {
             <li>{"\u2713 \u6bcf\u9031\u96fb\u5b50\u90f5\u4ef6\u6458\u8981"}</li>
             <li>{"\u2713 CSV\u532f\u51fa"}</li>
           </ul>
-          <Link href="/login" className="block text-center bg-[var(--accent)] text-white rounded px-4 py-2">
-            {"\u958b\u59cb\u4f7f\u7528"}
-          </Link>
+          <CheckoutButton
+            monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_MONTHLY || ""}
+            yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_YEARLY || ""}
+            label={"\u958b\u59cb\u4f7f\u7528"}
+            className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
+            userId={userId}
+            userEmail={userEmail}
+          />
         </div>
 
         <div className="border border-default rounded-lg p-6 bg-card">
@@ -54,9 +75,14 @@ export default function PricingPage() {
             <li>{"\u2713 CSV\u532f\u51fa"}</li>
             <li>{"\u2713 API\u5b58\u53d6\uff08\u898f\u5283\u4e2d\uff09"}</li>
           </ul>
-          <Link href="/login" className="block text-center bg-[var(--accent)] text-white rounded px-4 py-2">
-            {"\u958b\u59cb\u4f7f\u7528"}
-          </Link>
+          <CheckoutButton
+            monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_MONTHLY || ""}
+            yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_YEARLY || ""}
+            label={"\u958b\u59cb\u4f7f\u7528"}
+            className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
+            userId={userId}
+            userEmail={userEmail}
+          />
         </div>
       </div>
 
