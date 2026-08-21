@@ -7,6 +7,7 @@ import { formatCapital, formatDate } from "@/lib/utils";
 import { DATASET_SOURCES } from "@/lib/ingestion/sources.config";
 import DataAttribution, { AttributionDataset } from "@/components/DataAttribution";
 import RunNowButton from "@/components/RunNowButton";
+import ExportCsvButton from "@/components/ExportCsvButton";
 import type { Company } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -270,6 +271,7 @@ export default async function SearchResultsPage({
       <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
         <h1 className="text-xl font-bold">{savedSearch.name}</h1>
         <RunNowButton searchId={id} />
+        <ExportCsvButton searchId={id} />
       </div>
 
       <p
