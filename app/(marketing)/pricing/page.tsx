@@ -30,7 +30,7 @@ export default async function PricingPage() {
           <ul className="text-sm space-y-2 mb-6">
             <li>{"\u2713 30\u5929\u4ee5\u4e0a\u4e4b\u516c\u53f8\u8cc7\u6599"}</li>
             <li className="text-secondary">{"\u2022 \u7db2\u7ad9\u5167\u5efa\u5ee3\u544a"}</li>
-            <li className="text-secondary">{"\u2717 \u4e0d\u652f\u63f4\u5132\u5b58\u641c\u5c0b\u689d\u4ef6"}</li>
+            <li>{"\u2713 1 \u7d44\u5132\u5b58\u641c\u5c0b\u689d\u4ef6\uff08\u6bcf\u9031\u6458\u8981\uff09"}</li>
             <li className="text-secondary">{"\u2717 \u4e0d\u652f\u63f4CSV\u532f\u51fa"}</li>
           </ul>
           <Link href="/login" className="block text-center border border-default rounded px-4 py-2">
