@@ -446,7 +446,44 @@ picture.
   prematurely.
 - No schema changes — `subscriptions` already had every column needed.
 
-## Known open items carried into Session 19+
+**Session 19 — Tier Gating**
+- [x] Free-tier limits enforced server-side — verified live with a real
+      bypass attempt (`fetch()` directly against `/api/searches` from
+      the browser console, skipping the form entirely). First attempt
+      accidentally used an already-`pro` test account and correctly
+      succeeded (expected - paid tiers are unlimited); re-tested against
+      a genuinely free account already holding 7 leftover test searches
+      and got a clean `403` with the correct Traditional Chinese message.
+- `lib/tiers.ts` — `getUserTier()` only counts an `active`-status
+  subscription; `past_due`/`canceled`/no-row-at-all all fall back to
+  free. This means tier access is lost immediately on cancellation, not
+  at the end of the already-paid period - matches how Session 18's
+  webhook handler already behaves, deliberately not building a grace
+  period.
+- `canExportCsv()` is built and exported but not called from anywhere
+  yet - nothing to gate until Session 20 builds actual CSV export.
+  Wire it in immediately when that session starts, don't ship the
+  export endpoint ungated even briefly.
+- Cadence gating (`isCadenceAllowed`) and the search-count limit both
+  live in `app/api/searches/route.ts` itself, not just the form UI -
+  this is what makes the direct-fetch bypass attempt a real test and
+  not theater.
+- **Found while double-checking the spec, not a code bug:** the
+  already-shipped Session 12 pricing page said free tier does
+  `✗ 不支援儲存搜尋條件` (no saved-search support at all), contradicting
+  Section 7 and Session 19's own spec text, which both consistently
+  say **1** saved search for free tier. Session 12's own objective was
+  literally "pricing page reflects the tier limits from Section 7" -
+  it just didn't. Fixed the copy to say `✓ 1 組儲存搜尋條件（每週摘要）`,
+  matching what's actually enforced.
+
+## Known open items carried into Session 20+
+
+- `verymeanguy11@gmail.com` (a test account) has 7 leftover "Test"
+  saved searches predating tier gating, all still active and matching
+  against live company data - not urgent, but worth the same cleanup
+  treatment as the test data removed earlier in this file if it starts
+  generating unwanted digest emails.
 
 - CSV export (Session 20) is not built yet — users can only browse the
   results table or click through to Google Maps per row, no download.
