@@ -477,7 +477,55 @@ picture.
   it just didn't. Fixed the copy to say `✓ 1 組儲存搜尋條件（每週摘要）`,
   matching what's actually enforced.
 
-## Known open items carried into Session 20+
+**Session 20 — CSV Export**
+- [x] Free-tier export blocked at the API level — verified live by
+      clicking the new 匯出 CSV button on a free-tier account: clean
+      Chinese error message (CSV 匯出僅限付費方案使用，請升級方案。),
+      no file downloaded, no navigation to raw JSON.
+- [x] Attribution credit line and per-row dissolution/suspension
+      recency both present — verified by opening a real downloaded CSV
+      in Notepad, not just checking that a file exists.
+- Three real bugs found and fixed during actual testing, not just
+  written and assumed correct:
+  1. First draft of `route.ts` inferred dissolution-dataset freshness
+     from `entity_type` (guessing company_dissolve vs business_dissolve).
+     The results page (`page.tsx`) already solves this correctly per-row
+     via each company's own `source_dataset` column — rewrote to match
+     that existing pattern instead of inventing a parallel one.
+  2. `freshAt.slice is not a function` at runtime — `ingestion_runs.
+     completed_at` comes back from postgres.js as a `Date` object, not
+     a string. Fixed by wrapping in `new Date(freshAt).toISOString()`
+     before slicing.
+  3. `ORDER BY c.registration_date DESC` (no `NULLS LAST`) put every
+     company with no registration date on file at the *top* of the
+     export — Postgres's default NULL ordering for DESC is NULLS FIRST,
+     not last. Silently disagreed with `page.tsx`'s own query, which
+     already has `NULLS LAST`. Caught by comparing the same company's
+     row position between the live results page and a real export, not
+     by inspection — the two were out of sync until this was added.
+- No export button existed anywhere in the UI before this session -
+  added `components/ExportCsvButton.tsx` (fetch + blob download, mirrors
+  `RunNowButton.tsx`'s loading/message pattern) and wired it into
+  `app/(app)/searches/[id]/page.tsx` next to 立即執行.
+- CSV attribution lines reuse `DATASET_SOURCES` / the same Chinese
+  wording as `DataAttribution.tsx`, scoped to only the datasets actually
+  represented in that export - not a separately hardcoded string that
+  could drift out of sync with the results page's attribution.
+- No schema changes.
+
+## Known open items carried into Session 21+
+
+- A test `pro`/`active` subscription row was inserted directly via
+  Neon's SQL editor (bypassing Paddle entirely) for user id
+  `3503f33c-486d-43c2-a63d-73fbc4f69193`, purely to test Session 20's
+  export gate locally — and possibly a matching row in the production
+  database too, if that optional verification step was done. Not backed
+  by a real Paddle subscription. Confirm which email this user id
+  belongs to and remove the row(s) before this account should be
+  trusted as a genuine paying customer for anything else — same
+  category of cleanup as the verymeanguy11@gmail.com test searches
+  noted above.
+
 
 - `verymeanguy11@gmail.com` (a test account) has 7 leftover "Test"
   saved searches predating tier gating, all still active and matching
@@ -485,8 +533,6 @@ picture.
   treatment as the test data removed earlier in this file if it starts
   generating unwanted digest emails.
 
-- CSV export (Session 20) is not built yet — users can only browse the
-  results table or click through to Google Maps per row, no download.
 - If the `NEXTAUTH_URL` GitHub Actions secret from Session 16 wasn't
   actually added yet, the digest email's "view full results" link will
   be broken even though sending itself works fine.
