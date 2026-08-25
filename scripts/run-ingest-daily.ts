@@ -130,6 +130,14 @@ async function ingestDate(rocDate: string, runStats: {
       const profile = await fetchProfile(row.Business_Accounting_NO);
       await sleep(PROFILE_FETCH_DELAY_MS);
 
+      // Industry codes are intentionally NOT fetched here. Per the
+      // 2026-08-23 corrections-log entry, entity_type='company' industry
+      // codes are sourced from the bulk 公司登記混搭 CSV downloads via a
+      // separate periodic job (scripts/sync-industry-codes.ts), not a
+      // live per-company API call on every ingestion run. A brand-new
+      // company inserted here will have industry_codes = '{}' (the
+      // column's own default) until that job's next run picks it up.
+
       const registrationDate = rocDateToIso(rocDate);
       const rawAddress = profile?.Company_Location ?? null;
       const { region, district } = parseAddress(rawAddress || "");
@@ -174,6 +182,12 @@ async function ingestDate(rocDate: string, runStats: {
           END,
           source_month = EXCLUDED.source_month
       `;
+      // NOTE: industry_codes is deliberately absent from both the INSERT
+      // column list and the ON CONFLICT clause above. Omitting it from
+      // INSERT lets the column's own DEFAULT '{}' apply to new rows.
+      // Omitting it from ON CONFLICT means re-ingesting an existing
+      // company on a later day can never overwrite industry_codes that
+      // scripts/sync-industry-codes.ts has already populated.
 
       if (isNew) runStats.newCount++;
       else runStats.updatedCount++;

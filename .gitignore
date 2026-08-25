@@ -43,3 +43,7 @@ next-env.d.ts
 # leftover manual curl testing artifacts
 cookies.txt
 *.cookie
+data/industry-csv/
+data/industry-csv-datasets-full.json
+data/industry-csv-oids.json
+data/industry-csv-refresh-failures.json

@@ -1,0 +1,61 @@
+name: Monthly Industry CSV Refresh
+
+# Session 20b (revised, 2026-08-23). Refreshes entity_type='company'
+# industry codes from GCIS's 公司登記混搭 CSV bulk downloads (refreshed
+# by GCIS roughly monthly), then applies any newly-available codes to
+# companies still missing them.
+#
+# Uses a headless browser (Playwright) to click through each of the 110
+# dataset pages, since GCIS's download links are JavaScript-triggered,
+# not plain URLs — see the 2026-08-23 corrections-log entry.
+
+on:
+  schedule:
+    - cron: "0 4 10 * *"
+  workflow_dispatch: {}
+
+jobs:
+  refresh-industry-codes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Download all 110 industry CSV files
+        run: npx tsx scripts/refresh-industry-csv.ts
+        continue-on-error: true
+        # continue-on-error: a handful of dataset failures shouldn't
+        # block applying the ~100+ that did succeed. Real failures are
+        # still surfaced below via the alert email, not silently lost.
+
+      - name: Apply downloaded codes to companies still missing them
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx scripts/backfill-industry-codes.ts
+
+      - name: Alert if any dataset failed to download
+        if: always()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: npx tsx scripts/send-refresh-alert.ts
+        # send-refresh-alert.ts itself checks whether there were any
+        # failures and no-ops quietly if not — safe to always run.
+
+      - name: Notify on unexpected job failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          curl -X POST "https://api.resend.com/emails" -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -d "{\"from\":\"$EMAIL_FROM\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"tw-leads-radar industry CSV refresh FAILED\",\"html\":\"<p>The monthly industry CSV refresh job failed unexpectedly (not a per-dataset download failure — check the Actions log for details).</p>\"}"

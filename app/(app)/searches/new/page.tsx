@@ -9,13 +9,26 @@ const REGIONS = [
   "臺東縣", "澎湖縣", "金門縣", "連江縣",
 ];
 
-// Stubbed per Session 13 spec — replace with real 行業標準分類 codes later.
+// Real 11-category GCIS industry taxonomy (Session 20b) — confirmed
+// against GCIS's own API documentation, where each
+// "(測試)營業項目代碼( X類別 )查公司" dataset at data.gcis.nat.gov.tw/od/rule
+// names its own letter explicitly. The previous 5-item stub (Session 13)
+// had wrong letter-to-label mappings for F, G, I, and J specifically —
+// not just an incomplete subset — so saved searches built against it may
+// have silently filtered on the wrong category. See Section 11's
+// 2026-08-22 update to the industry_codes corrections-log entry.
 const INDUSTRY_CODES = [
   { code: "A", label: "農、林、漁、牧業" },
-  { code: "F", label: "營造業" },
-  { code: "G", label: "批發及零售業" },
-  { code: "I", label: "住宿及餐飲業" },
-  { code: "J", label: "資訊及通訊傳播業" },
+  { code: "B", label: "礦業及土石採取業" },
+  { code: "C", label: "製造業" },
+  { code: "D", label: "水電燃氣業" },
+  { code: "E", label: "營造及工程業" },
+  { code: "F", label: "零售、批發及餐飲業" },
+  { code: "G", label: "運輸、倉儲及通信業" },
+  { code: "H", label: "金融、保險及不動產業" },
+  { code: "I", label: "專業、科學及技術服務業" },
+  { code: "J", label: "文化、運動、休閒及其他服務業" },
+  { code: "Z", label: "其他未分類業" },
 ];
 
 export default function NewSearchPage() {
@@ -88,7 +101,7 @@ export default function NewSearchPage() {
 
       <div>
         <label className="block mb-1 font-medium">行業別</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {INDUSTRY_CODES.map((ind) => (
             <label key={ind.code} className="flex items-center gap-2">
               <input

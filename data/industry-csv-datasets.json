@@ -1,0 +1,552 @@
+[
+  {
+    "id": 1,
+    "dataset_name": "東台灣排除六都公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=3638E242-D390-4518-ACBD-2A0310ACE2BF"
+  },
+  {
+    "id": 2,
+    "dataset_name": "東台灣排除六都公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=6EB24222-05FE-41CE-8714-28AFFDAEAC2F"
+  },
+  {
+    "id": 3,
+    "dataset_name": "東台灣排除六都公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=004D98C8-A2EF-487E-AEA9-61BC7756B944"
+  },
+  {
+    "id": 4,
+    "dataset_name": "東台灣排除六都公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=C874B275-6180-4124-9540-BA4F0D3C53D5"
+  },
+  {
+    "id": 5,
+    "dataset_name": "東台灣排除六都公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=1B16093C-6C16-4FD5-AC1B-C1048A8152F6"
+  },
+  {
+    "id": 6,
+    "dataset_name": "東台灣排除六都公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=04473103-8402-4277-AD99-BE51EC5A7A7A"
+  },
+  {
+    "id": 7,
+    "dataset_name": "東台灣排除六都公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=1E0B25F2-3E52-4F96-8846-C6D91053300D"
+  },
+  {
+    "id": 8,
+    "dataset_name": "東台灣排除六都公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=CC902D23-A762-4DED-9A0E-3F91352B1B0A"
+  },
+  {
+    "id": 9,
+    "dataset_name": "東台灣排除六都公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=D1892B2B-A748-441F-BA19-E3194037B1F2"
+  },
+  {
+    "id": 10,
+    "dataset_name": "東台灣排除六都公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=4104EDCE-F835-429E-8FDA-6BE219EA7684"
+  },
+  {
+    "id": 11,
+    "dataset_name": "東台灣排除六都公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=E1C52E58-3EAB-441D-A224-17BCA9BB63C6"
+  },
+  {
+    "id": 12,
+    "dataset_name": "南台灣排除六都公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=B0ABD11B-AEA5-4B78-AB36-6044F5848FB1"
+  },
+  {
+    "id": 13,
+    "dataset_name": "南台灣排除六都公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=51855B6D-24C6-4FD0-A7C7-E2AE9CDFC0FC"
+  },
+  {
+    "id": 14,
+    "dataset_name": "南台灣排除六都公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=CAF8D4E5-930B-4D21-B2DE-E295EC58AB68"
+  },
+  {
+    "id": 15,
+    "dataset_name": "南台灣排除六都公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=254A9DF1-1931-4E9A-9DC2-45FE8F97F0C5"
+  },
+  {
+    "id": 16,
+    "dataset_name": "南台灣排除六都公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=37A6E182-957B-4655-BB89-8C430EAF85A7"
+  },
+  {
+    "id": 17,
+    "dataset_name": "南台灣排除六都公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0A7B6103-CA0D-423A-BDA7-D21146B61E5D"
+  },
+  {
+    "id": 18,
+    "dataset_name": "南台灣排除六都公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=2EE64A14-EB73-45E4-8C42-E63BF9E9CBA9"
+  },
+  {
+    "id": 19,
+    "dataset_name": "南台灣排除六都公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=A16F3B8F-B24B-402C-9F1C-4D7BC5E4C086"
+  },
+  {
+    "id": 20,
+    "dataset_name": "南台灣排除六都公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7F0832AC-ED25-410F-ADE3-6EFEE1EB9516"
+  },
+  {
+    "id": 21,
+    "dataset_name": "南台灣排除六都公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=33196552-C3CF-42FF-A53E-B11DC4E78D3C"
+  },
+  {
+    "id": 22,
+    "dataset_name": "南台灣排除六都公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=9E577CE1-9DFD-4EA2-B3D2-2D1A2A28C917"
+  },
+  {
+    "id": 23,
+    "dataset_name": "中台灣排除六都公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=4EC8E9E7-ABA5-4D62-9D59-8B178481BF08"
+  },
+  {
+    "id": 24,
+    "dataset_name": "中台灣排除六都公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=191806E9-6651-4CF9-8576-C7EB4D139D31"
+  },
+  {
+    "id": 25,
+    "dataset_name": "中台灣排除六都公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=F29AFB46-5312-4289-960D-7AF5190F23F4"
+  },
+  {
+    "id": 26,
+    "dataset_name": "中台灣排除六都公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0D8BD7AF-E5A2-4CDC-93D6-89F5C24A065E"
+  },
+  {
+    "id": 27,
+    "dataset_name": "中台灣排除六都公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=AE463A55-7C67-4B0A-A6F3-C8A21ECD191D"
+  },
+  {
+    "id": 28,
+    "dataset_name": "中台灣排除六都公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=E84577AD-6143-4E7A-84A2-A849F259EF38"
+  },
+  {
+    "id": 29,
+    "dataset_name": "中台灣排除六都公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=5C0D02B3-182B-4FE2-8498-F60639F9D3E9"
+  },
+  {
+    "id": 30,
+    "dataset_name": "中台灣排除六都公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7B6757F5-6ECF-451A-9845-DBCE45650F1B"
+  },
+  {
+    "id": 31,
+    "dataset_name": "中台灣排除六都公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=418A9531-7529-497B-B07B-F97F25F96D2E"
+  },
+  {
+    "id": 32,
+    "dataset_name": "中台灣排除六都公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=2A38853D-CECE-4B26-9069-1DC02C242B41"
+  },
+  {
+    "id": 33,
+    "dataset_name": "中台灣排除六都公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=35E91F96-E9BD-4988-80A1-667D24DF05D2"
+  },
+  {
+    "id": 34,
+    "dataset_name": "北台灣排除六都公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=CD2E42EF-FF2E-46E8-BC21-AAA46E5A3D86"
+  },
+  {
+    "id": 35,
+    "dataset_name": "北台灣排除六都公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=4D15DD79-962F-4092-A5BF-D71F27B8D595"
+  },
+  {
+    "id": 36,
+    "dataset_name": "北台灣排除六都公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=84008D67-9525-42E6-BB96-639426563B13"
+  },
+  {
+    "id": 37,
+    "dataset_name": "北台灣排除六都公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0919DCA3-710A-4EF2-9B1E-C023BB5C5CAD"
+  },
+  {
+    "id": 38,
+    "dataset_name": "北台灣排除六都公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=B77035CA-B9F4-46EE-A5C6-329ED221150A"
+  },
+  {
+    "id": 39,
+    "dataset_name": "北台灣排除六都公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=D48358A9-2F74-413F-ACBB-279C27042120"
+  },
+  {
+    "id": 40,
+    "dataset_name": "北台灣排除六都公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=69BFD2E1-3D8F-4B22-AC94-141128E80252"
+  },
+  {
+    "id": 41,
+    "dataset_name": "北台灣排除六都公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=8016D9F4-81EB-4E4E-9FAD-176440CE5671"
+  },
+  {
+    "id": 42,
+    "dataset_name": "北台灣排除六都公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=74BEAEC6-1175-46F4-98AC-B11B9D077ABE"
+  },
+  {
+    "id": 43,
+    "dataset_name": "北台灣排除六都公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=D6EE424F-D633-4ED6-A832-897B099E7384"
+  },
+  {
+    "id": 44,
+    "dataset_name": "北台灣排除六都公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=87B5C448-FC2B-4DCF-8665-13FAA079E64F"
+  },
+  {
+    "id": 45,
+    "dataset_name": "台中市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=DB78A853-6538-4455-8342-646E27842A4B"
+  },
+  {
+    "id": 46,
+    "dataset_name": "台中市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=CF566BC8-D1DC-4EAC-8657-95A9CF70CF03"
+  },
+  {
+    "id": 47,
+    "dataset_name": "台中市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0E68A2DE-F449-459A-82B6-5CD498582776"
+  },
+  {
+    "id": 48,
+    "dataset_name": "台中市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7A26C0BD-2FC8-4204-9161-7BCB20D0CED5"
+  },
+  {
+    "id": 49,
+    "dataset_name": "台中市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=382535B1-DDC5-4298-88CA-3035AEDB6D96"
+  },
+  {
+    "id": 50,
+    "dataset_name": "台中市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=91E30A72-09B0-422E-A8E6-F9FC76EDE254"
+  },
+  {
+    "id": 51,
+    "dataset_name": "台中市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=248D0114-EF47-4910-8A72-77078FEF3D8D"
+  },
+  {
+    "id": 52,
+    "dataset_name": "台中市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=64B68C4A-7DD5-4C7D-91F5-AE455D3D3126"
+  },
+  {
+    "id": 53,
+    "dataset_name": "台中市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=246C68AE-1198-4EB1-9CA6-1291569DA188"
+  },
+  {
+    "id": 54,
+    "dataset_name": "台中市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=FBA2D83D-95BA-4683-AEB5-79E9BF147A7B"
+  },
+  {
+    "id": 55,
+    "dataset_name": "台中市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=B1EC4412-5DFD-4600-B096-4D4A45BA4CBB"
+  },
+  {
+    "id": 56,
+    "dataset_name": "台北市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=EE22EA4B-A156-415E-99EA-4B345D4C75E0"
+  },
+  {
+    "id": 57,
+    "dataset_name": "台北市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=891F223C-ED94-4B22-86CF-9973C78FCE4B"
+  },
+  {
+    "id": 58,
+    "dataset_name": "台北市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=201ACA69-17AF-491E-B17F-D388B62A2CB7"
+  },
+  {
+    "id": 59,
+    "dataset_name": "台北市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=72388304-7C6D-472F-B829-9FC4D5589F4C"
+  },
+  {
+    "id": 60,
+    "dataset_name": "台北市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=321CBEF5-38CC-4F14-9447-F7D0D9C401C9"
+  },
+  {
+    "id": 61,
+    "dataset_name": "台北市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7030DAEF-D756-4405-ABEC-D872EF0F2487"
+  },
+  {
+    "id": 62,
+    "dataset_name": "台北市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=F0D09B8A-219D-4C1D-814D-091E0B75D486"
+  },
+  {
+    "id": 63,
+    "dataset_name": "台北市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=C45122FC-A5D8-4620-A216-61387F4F99AB"
+  },
+  {
+    "id": 64,
+    "dataset_name": "台北市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=77767F08-EE0A-4BE9-92F2-53D8AB39636B"
+  },
+  {
+    "id": 65,
+    "dataset_name": "台北市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=8692665C-BEE0-43AB-A031-93213BC22253"
+  },
+  {
+    "id": 66,
+    "dataset_name": "台北市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=DB2DBDDA-420E-4F41-BC75-6F90F55AD190"
+  },
+  {
+    "id": 67,
+    "dataset_name": "台南市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=FF6E8DD4-8C45-41AF-8703-6657DCCE6BF3"
+  },
+  {
+    "id": 68,
+    "dataset_name": "台南市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=3D381390-2282-4263-AF17-C6052287168C"
+  },
+  {
+    "id": 69,
+    "dataset_name": "台南市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=4CC34810-75B6-4815-886D-7759EDDB0A2C"
+  },
+  {
+    "id": 70,
+    "dataset_name": "台南市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=D0845333-C076-4561-BADD-F54342EBFB5C"
+  },
+  {
+    "id": 71,
+    "dataset_name": "台南市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=656C350A-1064-4223-BD92-1F57B716530A"
+  },
+  {
+    "id": 72,
+    "dataset_name": "台南市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=C46F188E-00B5-47D4-BE67-B9D70BE1F910"
+  },
+  {
+    "id": 73,
+    "dataset_name": "台南市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=BE4D2112-AF94-4271-9D45-B3A2EC68FF42"
+  },
+  {
+    "id": 74,
+    "dataset_name": "台南市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=BE1FE541-2AB4-46D0-B72C-EF3FC562F491"
+  },
+  {
+    "id": 75,
+    "dataset_name": "台南市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=842E58EF-3DDA-4BD0-823F-FCC924D68E83"
+  },
+  {
+    "id": 76,
+    "dataset_name": "台南市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=3E41235A-AEA7-42A2-BFA5-0482BA072E6B"
+  },
+  {
+    "id": 77,
+    "dataset_name": "台南市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=BE4E92C9-C058-4AF3-AFEF-860D83CA7F7B"
+  },
+  {
+    "id": 78,
+    "dataset_name": "新北市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=42807959-88D9-4160-8AEA-5AEBB8523C59"
+  },
+  {
+    "id": 79,
+    "dataset_name": "新北市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7349ED0A-2CF4-4817-BC2E-8C26852A0A62"
+  },
+  {
+    "id": 80,
+    "dataset_name": "新北市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0D6670D1-A23D-4F8E-A26F-53FDFC57C4F4"
+  },
+  {
+    "id": 81,
+    "dataset_name": "新北市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=382DF212-4DD0-41D0-B90B-6CEA3D790F7F"
+  },
+  {
+    "id": 82,
+    "dataset_name": "新北市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=8B0B2C38-C72A-4F37-83E8-F8FEFCE344E7"
+  },
+  {
+    "id": 83,
+    "dataset_name": "新北市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=58A0981C-DD01-45D1-8723-3D267F77D2F5"
+  },
+  {
+    "id": 84,
+    "dataset_name": "新北市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=74E835C8-E3B1-422E-B739-2A67101D1E22"
+  },
+  {
+    "id": 85,
+    "dataset_name": "新北市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=D5CF3A51-F899-4398-BF7D-5E17BE6E2F15"
+  },
+  {
+    "id": 86,
+    "dataset_name": "新北市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=01AF71BD-24EF-47BF-BF27-A9ABEDD00096"
+  },
+  {
+    "id": 87,
+    "dataset_name": "新北市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=786C85F4-65C3-4AE7-92B7-E20360BBC927"
+  },
+  {
+    "id": 88,
+    "dataset_name": "新北市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=EEBC65D6-499F-452A-A5B5-942B9DB2F24E"
+  },
+  {
+    "id": 89,
+    "dataset_name": "桃園市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=53B0990A-D5CB-4E39-ADDA-80C7F66AA013"
+  },
+  {
+    "id": 90,
+    "dataset_name": "桃園市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=86CAED5B-3B26-46D9-BBEB-FCDE69710EAD"
+  },
+  {
+    "id": 91,
+    "dataset_name": "桃園市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=35CD3F34-AE37-4AE0-8D4E-2C47ECC463A2"
+  },
+  {
+    "id": 92,
+    "dataset_name": "桃園市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=103D7E05-A8CF-43D8-989A-9A594AA52E0A"
+  },
+  {
+    "id": 93,
+    "dataset_name": "桃園市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=B38B7671-7114-40E4-82EF-824AC8BE68D8"
+  },
+  {
+    "id": 94,
+    "dataset_name": "桃園市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=473B116B-9617-4B1D-BD76-41987E579E91"
+  },
+  {
+    "id": 95,
+    "dataset_name": "桃園市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=1EE4C14A-579B-4330-81D6-884874648F86"
+  },
+  {
+    "id": 96,
+    "dataset_name": "桃園市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=A2CB503C-6DDB-4664-9E92-66D347DB345C"
+  },
+  {
+    "id": 97,
+    "dataset_name": "桃園市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=B55BAF20-3DEF-45F7-976D-A8CDB6203617"
+  },
+  {
+    "id": 98,
+    "dataset_name": "桃園市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=9A196E75-A7BF-4F13-8B07-E2963CEA4A82"
+  },
+  {
+    "id": 99,
+    "dataset_name": "桃園市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=71031196-B604-48EB-9360-6EAD6E6B31E6"
+  },
+  {
+    "id": 100,
+    "dataset_name": "高雄市公司登記資料-Z其他未分類業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=9ECED146-F5BB-426A-A86C-9C7A2E5013CE"
+  },
+  {
+    "id": 101,
+    "dataset_name": "高雄市公司登記資料-J文化、運動、休閒及其他服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=C05E4C19-3A7D-4469-A3E4-371EF50BDC37"
+  },
+  {
+    "id": 102,
+    "dataset_name": "高雄市公司登記資料-I專業、科學及技術服務業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=615C3FB2-DA99-4815-806C-2167558D481F"
+  },
+  {
+    "id": 103,
+    "dataset_name": "高雄市公司登記資料-H金融、保險及不動產業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=36276349-D59A-457A-937B-6B9CF7AC7336"
+  },
+  {
+    "id": 104,
+    "dataset_name": "高雄市公司登記資料-G運輸、倉儲及通信業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0A66A51D-6318-4C46-970C-CF25D2415891"
+  },
+  {
+    "id": 105,
+    "dataset_name": "高雄市公司登記資料-F零售、批發及餐飲業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=9C57D2FA-1B0B-46B2-9788-E5B74A8FA6DC"
+  },
+  {
+    "id": 106,
+    "dataset_name": "高雄市公司登記資料-E營造及工程業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=FF2C40BB-ABB1-4432-A208-220D8BD05582"
+  },
+  {
+    "id": 107,
+    "dataset_name": "高雄市公司登記資料-D水電燃氣業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=0549D65C-4F34-4B37-A658-42FB422CF483"
+  },
+  {
+    "id": 108,
+    "dataset_name": "高雄市公司登記資料-C製造業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=7F00019F-4D3C-408E-AB5B-ADDF966F3744"
+  },
+  {
+    "id": 109,
+    "dataset_name": "高雄市公司登記資料-B礦業及土石採取業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=53992F23-E9C4-4368-83C7-FE29216FB397"
+  },
+  {
+    "id": 110,
+    "dataset_name": "高雄市公司登記資料-A農、林、漁、牧業",
+    "dataset_page_url": "https://data.gcis.nat.gov.tw/od/detail?oid=58AD96FF-5C43-4E8D-AC08-497FDEC8501B"
+  }
+]

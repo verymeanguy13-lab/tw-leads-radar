@@ -6,13 +6,16 @@ import { db } from "../db";
  * search_matches' UNIQUE(saved_search_id, company_uniform_id) constraint
  * via ON CONFLICT DO NOTHING, so already-matched rows never error.
  *
- * NOTE: industry_codes is intentionally NOT used as a match filter here.
- * None of the 6 ingestion datasets carry an industry classification code
- * (confirmed in the blueprint's Section 11 corrections log) - every row
- * in companies.industry_codes is always '{}'. Filtering on it would mean
- * any saved_search with industry codes selected silently gets zero
- * matches forever, which is worse than not filtering at all. Revisit
- * only if/when a real industry-code source is integrated.
+ * industry_codes filtering (Session 20b): uses a PostgreSQL array-overlap
+ * condition (&&) against the GIN index already defined on
+ * companies.industry_codes - a company matches if it holds ANY of the
+ * saved_search's selected codes, not all of them. Before Session 20b,
+ * every company's industry_codes was always '{}' (no ingestion source
+ * populated it), so this filter was deliberately skipped entirely - see
+ * Section 11's 2026-08-22 update for why that's no longer true. A saved
+ * search created before Session 20b's backfill finished may still
+ * return fewer matches than expected for companies not yet enriched -
+ * that's a temporary backfill-completeness gap, not a filter bug.
  *
  * Returns the number of newly-created matches (not total matches).
  */
@@ -20,7 +23,7 @@ export async function matchSearch(searchId: string): Promise<number> {
   const sql = db();
 
   const searches = await sql`
-    SELECT regions, capital_min, capital_max, entity_type, keyword
+    SELECT industry_codes, regions, capital_min, capital_max, entity_type, keyword
     FROM saved_searches
     WHERE id = ${searchId}
   `;
@@ -29,6 +32,7 @@ export async function matchSearch(searchId: string): Promise<number> {
     throw new Error(`Saved search ${searchId} not found`);
   }
 
+  const industryCodes = (search.industry_codes ?? []) as string[];
   const regions = (search.regions ?? []) as string[];
   const entityType = search.entity_type as string;
   const keyword = search.keyword as string | null;
@@ -44,6 +48,7 @@ export async function matchSearch(searchId: string): Promise<number> {
       AND (${capitalMin === null} OR capital >= ${capitalMin})
       AND (${capitalMax === null} OR capital <= ${capitalMax})
       AND (${keywordPattern === null} OR name ILIKE ${keywordPattern})
+      AND (${industryCodes.length === 0} OR industry_codes && ${industryCodes}::text[])
   `;
 
   if (matches.length === 0) return 0;
