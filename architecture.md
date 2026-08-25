@@ -513,7 +513,106 @@ picture.
   could drift out of sync with the results page's attribution.
 - No schema changes.
 
+**Session 20b — Industry Code Enrichment (revised, CSV-based)**
+- [x] All 43,599 pre-existing `entity_type='company'` rows checked
+      against real GCIS data: 9,543 matched with real industry codes
+      via a full production run against all 110 bulk CSV files,
+      verified by querying the database directly (`matched with real
+      codes: 9543`), not by trusting the script's own printed summary
+      alone.
+- [x] Automated refresh confirmed working end to end twice — a 2-file
+      test run, then the full 110-file run (110/110 succeeded) — before
+      being wired into the scheduled monthly job.
+- [x] Failure alerting verified live: a fake failure file was fed to
+      `send-refresh-alert.ts` and a real email confirmed to arrive,
+      not just assumed from a non-error exit code.
+- The original plan for this session (documented earlier in this
+  blueprint) called two live per-company GCIS APIs, one confirmed
+  working and one with an unconfirmed response shape, and hit a real
+  registration wall requiring GCIS's formal IP-whitelisting process for
+  sustained/automated use. That whole approach was abandoned mid-session
+  (2026-08-23) in favor of GCIS's own bulk CSV downloads
+  (公司登記混搭 CSV dataset category) — same underlying data, no
+  per-company API calls, no registration. See the corrections-log entry
+  for the full reasoning, including why `entity_type='business'` is
+  explicitly out of scope (no equivalent complete CSV source exists for
+  it — the 商業登記混搭 CSV category only covers 6 of Taiwan's cities and
+  5 of 11 industry categories).
+- The CSV download button on GCIS's site is JavaScript-triggered
+  (`href="javascript:void(0)"`), not a plain URL — confirmed by reading
+  the page's raw source, not by assumption. A real file-download URL
+  (`data.gcis.nat.gov.tw/od/file?oid=...`) does exist and is a plain,
+  script-fetchable link once you know it, but each file's oid is only
+  generated client-side when the button is actually clicked and differs
+  from the dataset page's own oid — there's no static mapping between
+  the two. Rather than manually harvesting and hardcoding 110 oids (a
+  real option that was considered and rejected), `scripts/refresh-industry-csv.ts`
+  drives a real headless browser (Playwright) to click through each of
+  the 110 dataset pages itself, every run — slower per-run, but immune
+  to GCIS changing how oids are generated, and needs no pre-harvested
+  list to maintain.
+- `lib/ingestion/parse-industry-csv.ts` reads one downloaded CSV file
+  and returns a `統一編號 → industry codes` map, distinguishing a
+  uniform ID that's present with an empty array (the CSV had a row for
+  it, but GCIS's own 行業代號 field was genuinely blank) from one absent
+  entirely (not in this file at all — may just belong to a different
+  city/letter file, or be too new for this refresh cycle). Both
+  `scripts/backfill-industry-codes.ts` and the monthly job depend on
+  this distinction being kept, not collapsed into a single "empty"
+  state — same category of bug as the null-vs-empty-array issue the
+  original per-company-API plan already ran into and fixed once.
+- `industry_codes_checked_at` (added to `db/schema.sql` and to the live
+  Neon database during the original, since-abandoned per-company-API
+  attempt, before this session's revision) is NOT used by any of the
+  code actually built or shipped in this session. The revised design
+  doesn't need it: `scripts/backfill-industry-codes.ts` and the monthly
+  refresh job both just re-check every row still `industry_codes = '{}'`
+  each time they run, since re-parsing already-downloaded CSVs is cheap
+  and CPU-bound, not rate-limited like the old per-company API calls
+  were. The column was left in place rather than removed via a fresh
+  migration (harmless as dead schema, and removing it wasn't worth the
+  migration risk) — don't be misled into thinking it's load-bearing for
+  anything; nothing reads or writes it going forward.
+- New monthly scheduled job: `.github/workflows/refresh-industry-csv.yml`
+  (runs the 10th of each month) — downloads all 110 files via
+  `scripts/refresh-industry-csv.ts`, applies matches via
+  `scripts/backfill-industry-codes.ts` (runs even if some downloads
+  failed, so partial progress from the ones that succeeded still lands),
+  then `scripts/send-refresh-alert.ts` emails `verymeanguy13@gmail.com`
+  with concrete re-harvest/debugging instructions baked into the email
+  body itself — only if a per-dataset failure actually occurred, not
+  every run. A separate generic `if: failure()` step (matching the
+  existing `ingest.yml`/`digest.yml` pattern already in this repo)
+  covers any other unexpected job-level crash.
+- Reused the project's existing Resend setup (`RESEND_API_KEY`,
+  `EMAIL_FROM` — already configured since Session 5) for alerting
+  rather than adding a second email mechanism. Hit the same Resend
+  sandbox restriction Session 6 already documented (a non-domain-
+  verified sender can only deliver to the account's own address) —
+  worked around by using the account's own address as the alert
+  recipient rather than pursuing domain verification now.
+- Deliberate product decision, not an oversight: freshly-registered
+  companies may show `industry_codes = '{}'` for up to roughly a month
+  (GCIS's own refresh cadence for these CSV files, confirmed on the
+  dataset page itself: 更新頻率 每月) after appearing in the app via the
+  existing daily pipeline. This is NOT surfaced to end users anywhere
+  (no "pending" tag, no disclaimer) — checked against this product's
+  actual target customers (記帳士 and insurance agents), for whom
+  industry classification is a secondary filter, not the primary reason
+  they use the app. A saved_search with an industry filter selected
+  simply won't match a row until its industry_codes populates, same as
+  any filter behaves against not-yet-arrived data.
+- Schema: no new migration in this session (the one column that exists,
+  `industry_codes_checked_at`, predates this session's actual design —
+  see above).
+
 ## Known open items carried into Session 21+
+
+- `companies.industry_codes_checked_at` exists in both `db/schema.sql`
+  and the live Neon database but is unused dead schema as of Session
+  20b's revised design (see that session's entry above for why) — not
+  urgent to remove, but don't build new logic assuming it's populated
+  or meaningful.
 
 - A test `pro`/`active` subscription row was inserted directly via
   Neon's SQL editor (bypassing Paddle entirely) for user id
