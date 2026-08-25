@@ -614,23 +614,16 @@ picture.
   urgent to remove, but don't build new logic assuming it's populated
   or meaningful.
 
-- A test `pro`/`active` subscription row was inserted directly via
-  Neon's SQL editor (bypassing Paddle entirely) for user id
-  `3503f33c-486d-43c2-a63d-73fbc4f69193`, purely to test Session 20's
-  export gate locally — and possibly a matching row in the production
-  database too, if that optional verification step was done. Not backed
-  by a real Paddle subscription. Confirm which email this user id
-  belongs to and remove the row(s) before this account should be
-  trusted as a genuine paying customer for anything else — same
-  category of cleanup as the verymeanguy11@gmail.com test searches
-  noted above.
-
-
-- `verymeanguy11@gmail.com` (a test account) has 7 leftover "Test"
-  saved searches predating tier gating, all still active and matching
-  against live company data - not urgent, but worth the same cleanup
-  treatment as the test data removed earlier in this file if it starts
-  generating unwanted digest emails.
+- RESOLVED 2026-08-24: the test `pro` subscription row (user id
+  `3503f33c-486d-43c2-a63d-73fbc4f69193`, email verymeanguy13@gmail.com,
+  paddle_subscription_id confirmed NULL before deletion) and
+  verymeanguy11@gmail.com's 7 leftover "Test" saved searches (one with
+  43,204 real matches) were both deleted via `scripts/check-test-data.ts`
+  (read-only verification first) then `scripts/cleanup-test-data.ts`
+  (the actual delete, re-checking the paddle_subscription_id safety
+  condition itself rather than trusting the check script's earlier
+  output). `search_matches` rows for the deleted searches were removed
+  automatically via the existing `ON DELETE CASCADE`.
 
 - If the `NEXTAUTH_URL` GitHub Actions secret from Session 16 wasn't
   actually added yet, the digest email's "view full results" link will
