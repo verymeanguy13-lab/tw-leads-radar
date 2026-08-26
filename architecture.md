@@ -606,6 +606,69 @@ picture.
   `industry_codes_checked_at`, predates this session's actual design —
   see above).
 
+**Session 21 — Account & Billing Settings**
+- [x] Cancel, upgrade, downgrade, and update-payment-method all
+      verified against a real Paddle sandbox subscription (not just
+      code review) — created via a real checkout on the live site
+      (which already runs in Paddle sandbox mode), then tested locally:
+      upgrade (pro -> business) confirmed via the webhook actually
+      updating the DB tier afterward, downgrade button correctly
+      appeared post-upgrade, and cancel-at-period-end showed the
+      correct scheduled-end messaging with the right buttons
+      hidden/shown.
+- Cancellation policy decision (2026-08-24/25): cancel at period end
+  (customer keeps access, Jason keeps the payment for the already-paid
+  period) rather than immediate cutoff — standard SaaS practice, and
+  simpler to build correctly. Implemented via Paddle's cancel API with
+  `effective_from: "next_billing_period"` rather than relying on the
+  hosted customer-portal's default cancel behavior, since that default
+  isn't something this app controls or can verify explicitly.
+- Verified against the actual webhook handler before relying on it:
+  `resolveStatus()` in `app/api/webhooks/paddle/route.ts` reads only
+  Paddle's `data.status` field, which stays `"active"` throughout the
+  cancel-at-period-end grace window (Paddle tracks the pending
+  cancellation separately via `scheduled_change`, which the handler
+  doesn't check) — so this app's existing tier-gating logic correctly
+  keeps working with zero changes needed, until the real
+  `subscription.canceled` event fires at the actual period end.
+- New file `lib/paddle-api.ts`: server-side Paddle Billing REST API
+  client (separate from `components/CheckoutButton.tsx`'s client-side
+  Paddle.js, which only handles new purchases). Requires a new secret,
+  `PADDLE_API_KEY`, with the "Customer portal sessions (Write)"
+  permission specifically — without it, `management_urls` on the
+  subscription response comes back null/absent rather than erroring,
+  which is easy to misdiagnose as a code bug rather than a permissions
+  gap.
+- Real bug caught and fixed during this session: the account page was
+  first written using `next-auth/react`'s `useSession()`, which crashed
+  immediately (`useSession must be wrapped in a <SessionProvider />`)
+  — this app has no `SessionProvider` anywhere; every other page
+  (e.g. the pricing page) gets the session server-side via
+  `getServerSession()` instead. Fixed by splitting the account page
+  into a server component (`app/(app)/account/page.tsx`, fetches the
+  session and passes `userId`/`userEmail` down as props) and a client
+  component (`AccountPageClient.tsx`, holds all the interactive
+  fetch/button logic) — matching the same pattern the pricing page
+  already uses for `CheckoutButton`.
+- Local dev setup gap discovered and fixed during testing: `.env.local`
+  was missing `NEXT_PUBLIC_PADDLE_ENV` and all four
+  `NEXT_PUBLIC_PADDLE_PRICE_*` variables — they existed on Vercel
+  (which is why checkout already worked on the live site) but were
+  never copied into local dev. Missing `NEXT_PUBLIC_PADDLE_ENV`
+  specifically caused real, confusing 403s (defaulted to calling
+  Paddle's live API URL with a sandbox key) rather than an obviously
+  related error — worth checking first if a future session hits an
+  unexplained Paddle API 403 locally.
+- Known limitation, deliberately not built: no "resume/undo
+  cancellation" button. A safe, documented Paddle Billing API call for
+  reversing a scheduled cancellation wasn't confirmed during this
+  session, and this is real payment infrastructure — rather than guess,
+  it was left out. If a customer wants to undo a cancellation before
+  their period ends, that currently requires manual support
+  intervention or simply letting the subscription lapse and
+  re-subscribing.
+- Schema: no changes.
+
 ## Known open items carried into Session 21+
 
 - `companies.industry_codes_checked_at` exists in both `db/schema.sql`
@@ -646,9 +709,13 @@ picture.
   see the custom feature entry above.
 - 統一編號/VAT ID capture at checkout (B2B reverse-charge VAT, per
   Section 7) is not built — see the Session 18 entry above.
-- Tier gating (Session 19) doesn't exist yet — a user can now genuinely
-  subscribe and pay via Paddle, but nothing in the app actually checks
-  `subscriptions.tier` to unlock anything yet. Paying currently buys
-  nothing functionally different. This is the very next session, not
-  a bug, but worth being aware of if anyone actually subscribes before
-  Session 19 ships.
+- CORRECTED 2026-08-24/25 (documentation bug, not a code bug): this
+  item claimed Tier gating (Session 19) didn't exist. It does — fully
+  built and already verified elsewhere in this file (see the "Free-tier
+  limits enforced server-side" checklist item, tested with a real
+  direct-API bypass attempt). `lib/tiers.ts` (getUserTier,
+  canCreateSavedSearch, isCadenceAllowed, canExportCsv) is wired into
+  both `app/api/searches/route.ts` and the CSV export route. This stale
+  note was simply never removed after Session 19 actually shipped —
+  left here as a reminder to double-check "Known open items" against
+  the real code before assuming something isn't built.
