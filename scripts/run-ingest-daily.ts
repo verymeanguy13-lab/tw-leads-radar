@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { parseAddress } from "../lib/parsing/address";
+import { fetchLiveIndustryCodes } from "../lib/ingestion/fetch-live-industry";
 
 const DISCOVERY_API =
   "https://data.gcis.nat.gov.tw/od/data/api/467E8A3A-72C6-4663-9557-D9D74C597E14";
@@ -130,13 +131,23 @@ async function ingestDate(rocDate: string, runStats: {
       const profile = await fetchProfile(row.Business_Accounting_NO);
       await sleep(PROFILE_FETCH_DELAY_MS);
 
-      // Industry codes are intentionally NOT fetched here. Per the
-      // 2026-08-23 corrections-log entry, entity_type='company' industry
-      // codes are sourced from the bulk 公司登記混搭 CSV downloads via a
-      // separate periodic job (scripts/sync-industry-codes.ts), not a
-      // live per-company API call on every ingestion run. A brand-new
-      // company inserted here will have industry_codes = '{}' (the
-      // column's own default) until that job's next run picks it up.
+      // Session 23 QA Pass follow-up (2026-08-26): call the live
+      // per-company industry API for same-day classification. This is
+      // safe daily-discovery volume (~80-150/day), NOT the bulk
+      // historical pattern that triggered GCIS's registration wall
+      // before (see fetch-live-industry.ts's header comment for the
+      // distinction). liveIndustryCodesResult is null on ANY failure
+      // (never treat null as "confirmed empty" -- same discipline as
+      // the original, since-superseded per-company-API design, whose
+      // first version had a real bug from conflating the two).
+      const liveIndustryCodesResult = await fetchLiveIndustryCodes(row.Business_Accounting_NO);
+      await sleep(PROFILE_FETCH_DELAY_MS);
+      const industryCodes = liveIndustryCodesResult ?? [];
+      // If the live lookup failed, leave industry_codes untouched
+      // (still '{}' by column default) so the monthly CSV refresh
+      // remains the fallback -- this daily live call is a same-day
+      // improvement layered on top of that existing safety net, not a
+      // replacement for it.
 
       const registrationDate = rocDateToIso(rocDate);
       const rawAddress = profile?.Company_Location ?? null;
@@ -152,6 +163,7 @@ async function ingestDate(rocDate: string, runStats: {
           uniform_id, entity_type, name, capital, address_raw,
           address_region, address_district, responsible_person,
           registration_date, status, status_updated_at,
+          industry_codes,
           source_dataset, source_month
         ) VALUES (
           ${row.Business_Accounting_NO},
@@ -165,6 +177,7 @@ async function ingestDate(rocDate: string, runStats: {
           ${registrationDate},
           ${profile ? mapStatus(profile) : "active"},
           now(),
+          ${industryCodes}::text[],
           'gcis_daily_setup_query',
           ${sourceMonthLabel}
         )
@@ -180,14 +193,18 @@ async function ingestDate(rocDate: string, runStats: {
             WHEN EXCLUDED.status <> companies.status THEN now()
             ELSE companies.status_updated_at
           END,
+          industry_codes = CASE
+            WHEN cardinality(EXCLUDED.industry_codes) > 0 THEN EXCLUDED.industry_codes
+            ELSE companies.industry_codes
+          END,
           source_month = EXCLUDED.source_month
       `;
-      // NOTE: industry_codes is deliberately absent from both the INSERT
-      // column list and the ON CONFLICT clause above. Omitting it from
-      // INSERT lets the column's own DEFAULT '{}' apply to new rows.
-      // Omitting it from ON CONFLICT means re-ingesting an existing
-      // company on a later day can never overwrite industry_codes that
-      // scripts/sync-industry-codes.ts has already populated.
+      // industry_codes is included in both INSERT and ON CONFLICT now
+      // (2026-08-26, Session 23 QA Pass follow-up) -- the ON CONFLICT
+      // CASE means re-ingesting an existing company on a later day can
+      // never overwrite already-populated industry_codes (from either
+      // this live call on an earlier day, or the monthly CSV refresh)
+      // with an empty result from a failed live lookup.
 
       if (isNew) runStats.newCount++;
       else runStats.updatedCount++;

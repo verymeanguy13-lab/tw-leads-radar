@@ -113,6 +113,9 @@ export default function NewSearchPage() {
             </label>
           ))}
         </div>
+        <p className="text-sm text-secondary mt-2">
+          {"新設立公司的行業別分類現已於登記當日更新；少數較舊、尚未完成分類之公司資料，將隨後續資料更新逐步補齊。"}
+        </p>
       </div>
 
       <div>

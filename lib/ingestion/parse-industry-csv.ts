@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 
-// Session 20b (revised, 2026-08-23) — Industry Code Enrichment via bulk CSV.
+// Session 20b (revised, 2026-08-23) — parses GCIS bulk mashup CSVs into
+// a 統一編號 -> industry codes map.
 //
 // Parses one downloaded 公司登記混搭 CSV file (data.gcis.nat.gov.tw, dataset
 // category "公司登記混搭 CSV") into a map of 統一編號 -> industry codes.
@@ -67,15 +68,35 @@ function parseCsvLine(line: string): string[] {
  * Reads one 公司登記混搭 CSV file and returns a map of 統一編號 to its
  * industry codes.
  *
- * A uniform ID present in the map with an empty array means the CSV row
- * existed but 行業代號 was genuinely blank for that company. A uniform ID
- * absent from the map entirely means this file didn't contain a row for
- * it at all (it may be too new for this file's refresh cycle, or simply
- * belongs to a different city/industry-letter file). Callers combining
- * multiple files' maps should treat these two cases differently — see
- * scripts/backfill-industry-codes.ts and scripts/sync-industry-codes.ts.
+ * BUG FIX (2026-08-25/26, found during Session 23 QA Pass): the
+ * 行業代號（財政資訊中心匯入）column holds fine-grained numeric codes
+ * (e.g. "011999"), NOT the GCIS top-level letter category (A-J, Z) the
+ * search form's INDUSTRY_CODES taxonomy actually filters on. Those are
+ * two different classification systems entirely — the numeric codes
+ * are Taiwan's detailed tax-registration industry codes; the letter is
+ * simply which of GCIS's 110 city/category files this row came from.
+ * Storing only the numeric codes meant matchSearch()'s array-overlap
+ * check against a selected letter (e.g. "F") could never match
+ * anything, silently breaking every saved search with an industry
+ * filter for every user.
+ *
+ * Fix: the caller now knows which letter this file represents (it's
+ * derived from the filename) and passes it as `letterToAppend`, which
+ * gets pushed into every row's codes array alongside the numeric codes
+ * — so a company in the F-category Taipei file ends up with something
+ * like ["011999", "639099", "F"], not just ["011999", "639099"].
+ * matchSearch()'s existing query needs no changes at all: it already
+ * does an array-overlap check, so a saved search filtering on letter
+ * "F" now correctly matches.
+ *
+ * A uniform ID present in the map with an empty array (before the
+ * letter is appended) means the CSV row existed but 行業代號 was
+ * genuinely blank for that company — the letter is still appended in
+ * that case, so letter-based filtering still works even when the
+ * detailed numeric codes are missing. A uniform ID absent from the map
+ * entirely means this file didn't contain a row for it at all.
  */
-export function parseIndustryCsv(filePath: string): Map<string, string[]> {
+export function parseIndustryCsv(filePath: string, letterToAppend?: string): Map<string, string[]> {
   let content = readFileSync(filePath, "utf-8");
 
   // Strip UTF-8 BOM if present — Node does not do this automatically,
@@ -114,6 +135,10 @@ export function parseIndustryCsv(filePath: string): Map<string, string[]> {
       .split(",")
       .map((code) => code.trim())
       .filter((code) => code.length > 0);
+
+    if (letterToAppend && !codes.includes(letterToAppend)) {
+      codes.push(letterToAppend);
+    }
 
     result.set(uniformId, codes);
   }

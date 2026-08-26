@@ -191,7 +191,7 @@ export default async function SearchResultsPage({
   // RLS (saved_searches_isolation) means this only returns a row if the
   // search actually belongs to the signed-in user.
   const searches = await withUserContext(userId, (sqlClient) =>
-    sqlClient`SELECT id, name FROM saved_searches WHERE id = ${id}`
+    sqlClient`SELECT id, name, industry_codes FROM saved_searches WHERE id = ${id}`
   );
   const savedSearch = searches[0];
   if (!savedSearch) {
@@ -280,6 +280,12 @@ export default async function SearchResultsPage({
         資料更新日期：{lastGoodAt ? formatDate(lastGoodAt) : "尚無資料"}
         {isStale && "（已超過預期更新週期，資料可能不是最新）"}
       </p>
+
+      {savedSearch.industry_codes && savedSearch.industry_codes.length > 0 && (
+        <p className="text-xs text-secondary mb-6">
+          {"提醒：少數較舊、尚未完成行業別分類之公司資料，將隨後續資料更新逐步補齊，暫時不會出現在此篩選結果中。"}
+        </p>
+      )}
 
       {totalMatches === 0 ? (
         <p className="text-secondary text-sm py-12 text-center">

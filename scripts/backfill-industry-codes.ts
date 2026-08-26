@@ -4,11 +4,26 @@ import { join } from "path";
 import { parseIndustryCsv } from "../lib/ingestion/parse-industry-csv";
 
 // Session 20b (revised, 2026-08-23) — one-time historical backfill.
+// UPDATED 2026-08-25/26 (Session 23 QA Pass bug fix): now also extracts
+// and appends each file's GCIS letter category (A-J, Z) to every
+// company's industry_codes, not just the fine-grained numeric codes —
+// see parse-industry-csv.ts's updated doc comment for why this was
+// broken before (matchSearch() could never match a letter-based filter
+// against an array that only ever held numeric codes).
+//
+// Also changed to reprocess EVERY entity_type='company' row every run,
+// not just ones with industry_codes = '{}' — needed this one time to
+// backfill the missing letter into the ~9,543 rows the original
+// (letter-less) run had already populated, and going forward this also
+// keeps data correctly current if GCIS ever reclassifies a company,
+// at negligible extra cost (parsing 110 files and updating ~43,599 rows
+// is still fast — this is CPU-bound file parsing, not rate-limited API
+// calls).
 //
 // Reads every .csv file in CSV_DIR (each one a downloaded 公司登記混搭 CSV
 // file), builds one combined 統一編號 -> industry codes map, then updates
-// every entity_type='company' row in `companies` whose industry_codes is
-// still '{}' and whose 統一編號 is found in that map.
+// every entity_type='company' row in `companies` whose 統一編號 is found
+// in that map.
 //
 // This does NOT call any live GCIS API and needs no IP registration — see
 // the 2026-08-23 corrections-log entry in the blueprint.
@@ -21,6 +36,14 @@ const PROGRESS_LOG_INTERVAL = 500;
 
 const sql = neon(process.env.DATABASE_URL!);
 
+// Filenames always follow ${region}公司登記資料-${letter}${categoryName}.csv
+// (see data/industry-csv-datasets.json's dataset_name values) — the
+// letter is always the single character right after "資料-".
+function extractLetterFromFilename(filename: string): string | undefined {
+  const match = filename.match(/資料-([A-JZ])/);
+  return match ? match[1] : undefined;
+}
+
 function loadCombinedMap(): {
   combined: Map<string, string[]>;
   filesLoaded: number;
@@ -30,8 +53,7 @@ function loadCombinedMap(): {
 
   if (files.length === 0) {
     throw new Error(
-      `No .csv files found in ${CSV_DIR}. Download at least one file from ` +
-        `data.gcis.nat.gov.tw/od/datacategory (公司登記混搭 CSV) into this folder first.`
+      `No .csv files found in ${CSV_DIR}. Run scripts/refresh-industry-csv.ts first to download them.`
     );
   }
 
@@ -41,8 +63,12 @@ function loadCombinedMap(): {
 
   for (const file of files) {
     const fullPath = join(CSV_DIR, file);
+    const letter = extractLetterFromFilename(file);
+    if (!letter) {
+      console.warn(`Could not extract a letter category from filename "${file}" — codes from this file won't include a letter.`);
+    }
     try {
-      const perFile = parseIndustryCsv(fullPath);
+      const perFile = parseIndustryCsv(fullPath, letter);
       for (const [uniformId, codes] of perFile) {
         // Files are scoped to non-overlapping city/letter combinations, so
         // collisions shouldn't happen in practice. If one does, keep the
@@ -52,7 +78,7 @@ function loadCombinedMap(): {
         }
       }
       filesLoaded++;
-      console.log(`Loaded ${file}: ${perFile.size} rows`);
+      console.log(`Loaded ${file} (letter: ${letter ?? "unknown"}): ${perFile.size} rows`);
     } catch (err) {
       filesFailed++;
       console.error(`Failed to parse ${file}:`, err);
@@ -69,12 +95,12 @@ async function main() {
     `Loaded ${filesLoaded} file(s) (${filesFailed} failed to parse), ${combined.size} total 統一編號 entries.`
   );
 
-  console.log("Fetching companies still needing industry codes...");
+  console.log("Fetching all entity_type='company' rows...");
   const pending = await sql`
     SELECT uniform_id FROM companies
-    WHERE entity_type = 'company' AND industry_codes = '{}'
+    WHERE entity_type = 'company'
   `;
-  console.log(`${pending.length} entity_type='company' rows currently have empty industry_codes.`);
+  console.log(`${pending.length} entity_type='company' rows to check.`);
 
   let matchedNonEmpty = 0;
   let matchedButEmpty = 0;
@@ -88,11 +114,9 @@ async function main() {
     if (codes === undefined) {
       notFoundInAnyFile++;
     } else if (codes.length === 0) {
-      // The CSV had a row for this company, but its 行業代號 field was
-      // genuinely blank. Still worth writing — an empty array is a
-      // different, more informative state than "never checked", and
-      // matches how parse-industry-csv.ts's own contract distinguishes
-      // "found with zero codes" from "not found at all".
+      // Genuinely no codes at all — shouldn't normally happen now that
+      // the letter is always appended when known, but handled the same
+      // way regardless.
       await sql`
         UPDATE companies SET industry_codes = ${codes}::text[]
         WHERE uniform_id = ${uniformId}
