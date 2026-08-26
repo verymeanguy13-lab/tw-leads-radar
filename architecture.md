@@ -669,6 +669,28 @@ picture.
   re-subscribing.
 - Schema: no changes.
 
+**Session 22 — Maintenance Mode**
+- [x] MAINTENANCE_MODE=true gates the whole app — verified all three
+      states locally, not just code review: normal operation unchanged
+      (pricing page loads without forced login, account page still
+      shows the real logged-in session), maintenance-on (every page
+      redirects to /maintenance, /api/account returns a proper JSON 503
+      rather than a redirect or crash), and turning it back off
+      restores normal behavior.
+- Real risk caught before it shipped: `middleware.ts`'s matcher
+  previously only covered `/searches`, `/account`, `/admin`. Broadening
+  it to catch the whole app (needed so maintenance mode can gate
+  everything) would have made `withAuth`'s default behavior start
+  forcing a login redirect onto previously-public pages like `/pricing`
+  too, since `withAuth` protects every route it's actually invoked
+  against. Fixed by keeping the maintenance-mode check separate from
+  the auth check: the auth check (`authMiddleware`) is now only
+  actually invoked for the same three prefixes it always was
+  (`PROTECTED_PREFIXES`), even though the middleware's matcher itself
+  is now broad — verified locally that `/pricing` still loads without
+  a login prompt.
+- Schema: no changes.
+
 ## Known open items carried into Session 21+
 
 - `companies.industry_codes_checked_at` exists in both `db/schema.sql`
