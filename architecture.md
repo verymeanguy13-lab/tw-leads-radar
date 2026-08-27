@@ -691,6 +691,95 @@ picture.
   a login prompt.
 - Schema: no changes.
 
+**Session 23 — QA Pass**
+- [x] `npx tsc --noEmit` clean.
+- [x] Full real ingestion cycle run end-to-end (`scripts/run-ingest-daily.ts`
+      against live GCIS data) — 0 failures, both before and after this
+      session's fixes.
+- [x] Free-tier cadence-gating bypass re-verified live (not just
+      assumed from code review, unlike the original Session 19 sign-off):
+      a direct fetch() to POST /api/searches with cadence: "monthly" as
+      a genuinely free-tier account got a clean 403 with the correct
+      message.
+- [x] Maintenance mode's write-blocking behavior — /api/account
+      confirmed returning a proper JSON 503 while MAINTENANCE_MODE=true,
+      not a redirect or crash.
+- CRITICAL BUG found and fixed same session, not left for a future one:
+  `saved_searches.industry_codes` stores GCIS's top-level letter
+  categories (e.g. "A"), but `companies.industry_codes` — populated by
+  Session 20b's CSV pipeline — only ever held fine-grained numeric
+  codes (e.g. "011999"). These are two different GCIS classification
+  systems that never overlap as array elements. Consequence: `matchSearch()`'s
+  array-overlap check could never match an industry filter against
+  anything, meaning **every saved search with an industry filter
+  selected had returned zero results, for every user, since Session
+  20b shipped** — a severe, silent, product-breaking bug that had
+  gone undetected until this QA pass actually exercised a real search
+  with a real industry filter rather than just checking the pipeline's
+  own summary counts.
+  - Fix: `lib/ingestion/parse-industry-csv.ts` now accepts an optional
+    `letterToAppend` parameter and pushes it into each row's codes
+    array — the letter is always recoverable from which of the 110
+    city/category CSV files a company's row came from (filenames follow
+    `${region}公司登記資料-${letter}${categoryName}.csv`), so no new
+    data source was needed, just capturing information that was already
+    implicitly available and previously thrown away.
+  - `scripts/backfill-industry-codes.ts` changed to reprocess ALL
+    `entity_type='company'` rows every run, not just ones with empty
+    `industry_codes` — needed once, to retroactively add the missing
+    letter to the ~19,614 rows already populated by earlier runs, and
+    going forward this also keeps data correctly current if GCIS ever
+    reclassifies a company. Cost is negligible (CPU-bound file parsing
+    of 110 files, not rate-limited API calls).
+  - Verified live, not just by code review: a real saved search
+    (industry H, region 臺北市) went from 0 matches to 696 real matches
+    after the fix and a re-run.
+- MAJOR IMPROVEMENT found during the same investigation, not originally
+  planned for this session: the live per-company GCIS industry API
+  (`公司登記基本資料-應用三`, oid `236EE382-4942-41A9-BD03-CA0709025E7C`)
+  from the ORIGINAL, since-abandoned Session 20b plan was re-tested and
+  found to work fine at daily-discovery volume (~80-150 calls/day) —
+  the registration wall that killed the original plan was specifically
+  triggered by a 43,599-company HISTORICAL BULK BACKFILL in a short
+  window, a fundamentally different load pattern than a small daily
+  trickle of newly-discovered companies (the same order of magnitude as
+  the existing `fetchProfile()` call in `run-ingest-daily.ts`, which
+  already succeeds daily without issue). This API's `Business_Item`
+  codes are a different, richer GCIS scheme than the CSV's numeric
+  codes, and conveniently embed the top-level letter as the first
+  character (e.g. `"I301010"` -> `I`) — confirmed live against a real
+  company (統編 62118503) registered the day before, which the monthly
+  CSV had nothing for yet but this live API returned full
+  classification for immediately.
+  - New file `lib/ingestion/fetch-live-industry.ts`: same null-vs-empty-
+    array failure discipline as the original (pre-CSV-pivot) design,
+    for the same reason that design got it wrong once already — null
+    means "lookup failed," never treat it as "confirmed empty."
+  - Wired into `run-ingest-daily.ts` for every newly-discovered company.
+    `industry_codes` added back into that script's INSERT/ON CONFLICT
+    (it had been deliberately removed from both when Session 20b was
+    revised to the CSV-only approach) — the ON CONFLICT CASE ensures a
+    later re-ingest of an existing company can never overwrite
+    already-populated codes with an empty result from a failed live
+    call.
+  - Verified live: a fresh `run-ingest-daily.ts` run classified 20/20
+    newly-discovered companies correctly, same day, with no rate-limit
+    or registration-wall errors.
+  - Practical effect: new companies now get real industry classification
+    the same day they're discovered, not up to a month later. The
+    monthly CSV bulk approach remains in place as the backfill path for
+    the historical backlog and as a fallback if the live call ever
+    fails on a given day.
+- Added transparency copy on the search-creation form (near the 行業別
+  checkboxes) and the search-results page, per Jason's explicit request
+  — this reverses the earlier 2026-08-23 decision not to surface the
+  freshness gap to end users. Copy was written, then rewritten again
+  once the live-classification fix above made the original "up to a
+  month" framing inaccurate — current copy reflects that new companies
+  are same-day, only a shrinking historical backlog remains pending.
+- Schema: no changes — both fixes write into the existing
+  `industry_codes TEXT[]` column, no new columns needed.
+
 ## Known open items carried into Session 21+
 
 - `companies.industry_codes_checked_at` exists in both `db/schema.sql`
