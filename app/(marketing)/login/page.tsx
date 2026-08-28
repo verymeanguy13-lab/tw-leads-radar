@@ -11,7 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 function LoginForm() {
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/searches/new";
+  const callbackUrl = params.get("callbackUrl") || "/searches";
   const urlError = params.get("error");
   const justVerified = params.get("verified") === "1";
 

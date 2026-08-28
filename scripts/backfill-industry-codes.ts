@@ -1,7 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { readdirSync } from "fs";
 import { join } from "path";
-import { parseIndustryCsv } from "../lib/ingestion/parse-industry-csv";
+import { parseIndustryCsv, IndustryCsvRow } from "../lib/ingestion/parse-industry-csv";
 
 // Session 20b (revised, 2026-08-23) — one-time historical backfill.
 // UPDATED 2026-08-25/26 (Session 23 QA Pass bug fix): now also extracts
@@ -30,6 +30,12 @@ import { parseIndustryCsv } from "../lib/ingestion/parse-industry-csv";
 //
 // entity_type='business' rows are explicitly untouched by this script —
 // that enrichment is deferred, see the same corrections-log entry.
+//
+// UPDATE (2026-08-27): also backfills companies.registration_date from
+// each file's 核准設立日期 column (see parse-industry-csv.ts's updated
+// doc comment for the full story). Only fills it in when currently
+// NULL - never overwrites an existing date, same COALESCE convention
+// lib/ingestion/upsert.ts already uses.
 
 const CSV_DIR = join(__dirname, "..", "data", "industry-csv");
 const PROGRESS_LOG_INTERVAL = 500;
@@ -45,7 +51,7 @@ function extractLetterFromFilename(filename: string): string | undefined {
 }
 
 function loadCombinedMap(): {
-  combined: Map<string, string[]>;
+  combined: Map<string, IndustryCsvRow>;
   filesLoaded: number;
   filesFailed: number;
 } {
@@ -57,7 +63,7 @@ function loadCombinedMap(): {
     );
   }
 
-  const combined = new Map<string, string[]>();
+  const combined = new Map<string, IndustryCsvRow>();
   let filesLoaded = 0;
   let filesFailed = 0;
 
@@ -69,12 +75,12 @@ function loadCombinedMap(): {
     }
     try {
       const perFile = parseIndustryCsv(fullPath, letter);
-      for (const [uniformId, codes] of perFile) {
+      for (const [uniformId, row] of perFile) {
         // Files are scoped to non-overlapping city/letter combinations, so
         // collisions shouldn't happen in practice. If one does, keep the
         // first value seen and note it rather than silently overwriting.
         if (!combined.has(uniformId)) {
-          combined.set(uniformId, codes);
+          combined.set(uniformId, row);
         }
       }
       filesLoaded++;
@@ -97,7 +103,7 @@ async function main() {
 
   console.log("Fetching all entity_type='company' rows...");
   const pending = await sql`
-    SELECT uniform_id FROM companies
+    SELECT uniform_id, registration_date FROM companies
     WHERE entity_type = 'company'
   `;
   console.log(`${pending.length} entity_type='company' rows to check.`);
@@ -105,35 +111,45 @@ async function main() {
   let matchedNonEmpty = 0;
   let matchedButEmpty = 0;
   let notFoundInAnyFile = 0;
+  let registrationDatesFilled = 0;
   let processed = 0;
 
   for (const row of pending) {
     const uniformId = row.uniform_id as string;
-    const codes = combined.get(uniformId);
+    const hadRegistrationDate = row.registration_date !== null;
+    const csvRow = combined.get(uniformId);
 
-    if (codes === undefined) {
+    if (csvRow === undefined) {
       notFoundInAnyFile++;
-    } else if (codes.length === 0) {
-      // Genuinely no codes at all — shouldn't normally happen now that
-      // the letter is always appended when known, but handled the same
-      // way regardless.
-      await sql`
-        UPDATE companies SET industry_codes = ${codes}::text[]
-        WHERE uniform_id = ${uniformId}
-      `;
-      matchedButEmpty++;
     } else {
+      const { codes, registrationDate } = csvRow;
+      // registration_date uses COALESCE, same convention as
+      // lib/ingestion/upsert.ts's ON CONFLICT clause: never overwrite an
+      // already-known date, and only fill it in when currently NULL.
+      // industry_codes is NOT coalesced - a fresh CSV re-run should
+      // always win there, matching the existing (pre-2026-08-27)
+      // behavior this script has always had for that column.
       await sql`
-        UPDATE companies SET industry_codes = ${codes}::text[]
+        UPDATE companies
+        SET
+          industry_codes = ${codes}::text[],
+          registration_date = COALESCE(registration_date, ${registrationDate}::date)
         WHERE uniform_id = ${uniformId}
       `;
-      matchedNonEmpty++;
+      if (!hadRegistrationDate && registrationDate !== null) {
+        registrationDatesFilled++;
+      }
+      if (codes.length === 0) {
+        matchedButEmpty++;
+      } else {
+        matchedNonEmpty++;
+      }
     }
 
     processed++;
     if (processed % PROGRESS_LOG_INTERVAL === 0) {
       console.log(
-        `...${processed}/${pending.length} processed (${matchedNonEmpty} matched, ${matchedButEmpty} matched-but-empty, ${notFoundInAnyFile} not found yet)`
+        `...${processed}/${pending.length} processed (${matchedNonEmpty} matched, ${matchedButEmpty} matched-but-empty, ${notFoundInAnyFile} not found yet, ${registrationDatesFilled} registration_date filled so far)`
       );
     }
   }
@@ -142,6 +158,7 @@ async function main() {
   console.log(`  Matched with real codes:     ${matchedNonEmpty}`);
   console.log(`  Matched but genuinely empty: ${matchedButEmpty}`);
   console.log(`  Not found in any loaded file: ${notFoundInAnyFile} (re-run after downloading more files, or a later CSV refresh, to pick these up)`);
+  console.log(`  registration_date newly filled: ${registrationDatesFilled} (rows that previously had no registration date at all)`);
   console.log(`  CSV files that failed to parse: ${filesFailed}`);
 }
 

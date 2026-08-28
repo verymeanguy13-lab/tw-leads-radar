@@ -8,6 +8,8 @@ import { DATASET_SOURCES } from "@/lib/ingestion/sources.config";
 import DataAttribution, { AttributionDataset } from "@/components/DataAttribution";
 import RunNowButton from "@/components/RunNowButton";
 import ExportCsvButton from "@/components/ExportCsvButton";
+import DeleteSearchButton from "@/components/DeleteSearchButton";
+import { getUserTier } from "@/lib/tiers";
 import type { Company } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -60,14 +62,27 @@ function parsePage(value: string | undefined): number {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
+// Freshness-tier gating (same rule and rationale as
+// lib/matching/engine.ts's matchSearch(): free tier only sees
+// entity_type='company' rows once companies.created_at is 30+ days old;
+// entity_type='business' rows are exempt since they're monthly-cadence
+// for every tier already. matchSearch() only ever INSERTS into
+// search_matches (ON CONFLICT DO NOTHING) and never deletes, so a row
+// that matched before this gate existed - or before a user's tier
+// changed - can still be sitting in search_matches. This read-time
+// condition is the actual enforcement boundary for what a user sees;
+// the write-time gate in matchSearch() just keeps that table from
+// growing rows a free user should never see in the first place.
 async function fetchPage(
   sql: ReturnType<typeof db>,
   searchId: string,
+  isFreeTier: boolean,
   sort: SortKey,
   order: SortOrder,
   limit: number,
   offset: number
 ) {
+  const gated = isFreeTier;
   const key = `${sort}_${order}`;
   switch (key) {
     case "registration_date_asc":
@@ -76,6 +91,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.registration_date ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -85,6 +101,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.capital DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -94,6 +111,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.capital ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -103,6 +121,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.address_region DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -112,6 +131,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.address_region ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -122,6 +142,7 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
+          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
         ORDER BY c.registration_date DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -203,9 +224,13 @@ export default async function SearchResultsPage({
   const page = parsePage(sp.page);
   const offset = (page - 1) * PAGE_SIZE;
 
+  const tier = await getUserTier(userId);
+  const isFreeTier = tier === "free";
+
   const rows = (await fetchPage(
     sql,
     id,
+    isFreeTier,
     sort,
     order,
     PAGE_SIZE,
@@ -272,6 +297,7 @@ export default async function SearchResultsPage({
         <h1 className="text-xl font-bold">{savedSearch.name}</h1>
         <RunNowButton searchId={id} />
         <ExportCsvButton searchId={id} />
+        <DeleteSearchButton searchId={id} searchName={savedSearch.name} />
       </div>
 
       <p

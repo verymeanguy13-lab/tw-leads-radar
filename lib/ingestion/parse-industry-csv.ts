@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { convertRocDate } from "../parsing/roc-date";
 
 // Session 20b (revised, 2026-08-23) — parses GCIS bulk mashup CSVs into
 // a 統一編號 -> industry codes map.
@@ -22,6 +23,12 @@ import { readFileSync } from "fs";
 
 const UNIFORM_ID_COLUMN = "統一編號";
 const INDUSTRY_CODES_COLUMN = "行業代號（財政資訊中心匯入）";
+const REGISTRATION_DATE_COLUMN = "核准設立日期";
+
+export interface IndustryCsvRow {
+  codes: string[];
+  registrationDate: string | null;
+}
 
 /**
  * Minimal RFC4180-style CSV line splitter. Handles double-quoted fields,
@@ -89,14 +96,32 @@ function parseCsvLine(line: string): string[] {
  * does an array-overlap check, so a saved search filtering on letter
  * "F" now correctly matches.
  *
- * A uniform ID present in the map with an empty array (before the
+ * A uniform ID present in the map with an empty codes array (before the
  * letter is appended) means the CSV row existed but 行業代號 was
  * genuinely blank for that company — the letter is still appended in
  * that case, so letter-based filtering still works even when the
  * detailed numeric codes are missing. A uniform ID absent from the map
  * entirely means this file didn't contain a row for it at all.
+ *
+ * UPDATE (2026-08-27): also extracts 核准設立日期 (approved registration
+ * date) into each row's `registrationDate`, converted from the ROC
+ * calendar via lib/parsing/roc-date.ts. This column was already present
+ * in every downloaded file and was being silently discarded - most
+ * established companies never got a registration_date from anywhere
+ * else, since the company_new government dataset (see
+ * lib/ingestion/sources.config.ts) has limited retention and doesn't
+ * go back far enough to cover companies that registered years ago. That
+ * left the free-tier freshness gate in lib/matching/engine.ts unable to
+ * tell an old company from a new one for the vast majority of rows,
+ * falling back to companies.created_at (when we happened to import the
+ * row) instead - which, right after a bulk backfill, is recent for
+ * nearly everything. registrationDate is null here if the column is
+ * missing, blank, or unparseable for that row (unparseable dates are
+ * not currently logged - if a real file uses a date format
+ * convertRocDate doesn't handle, check its output on a sample row
+ * before trusting a full backfill run).
  */
-export function parseIndustryCsv(filePath: string, letterToAppend?: string): Map<string, string[]> {
+export function parseIndustryCsv(filePath: string, letterToAppend?: string): Map<string, IndustryCsvRow> {
   let content = readFileSync(filePath, "utf-8");
 
   // Strip UTF-8 BOM if present — Node does not do this automatically,
@@ -114,14 +139,20 @@ export function parseIndustryCsv(filePath: string, letterToAppend?: string): Map
   const header = parseCsvLine(lines[0]);
   const uniformIdIndex = header.indexOf(UNIFORM_ID_COLUMN);
   const industryCodesIndex = header.indexOf(INDUSTRY_CODES_COLUMN);
+  const registrationDateIndex = header.indexOf(REGISTRATION_DATE_COLUMN);
 
   if (uniformIdIndex === -1 || industryCodesIndex === -1) {
     throw new Error(
       `${filePath}: expected columns "${UNIFORM_ID_COLUMN}" and "${INDUSTRY_CODES_COLUMN}" not found in header: ${header.join(", ")}`
     );
   }
+  // registrationDateIndex is allowed to be -1 (column missing) rather
+  // than throwing - unlike the two columns above, losing this one
+  // shouldn't block industry-code enrichment from running at all, it
+  // just means registrationDate comes back null for every row in this
+  // file.
 
-  const result = new Map<string, string[]>();
+  const result = new Map<string, IndustryCsvRow>();
 
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i]);
@@ -140,7 +171,12 @@ export function parseIndustryCsv(filePath: string, letterToAppend?: string): Map
       codes.push(letterToAppend);
     }
 
-    result.set(uniformId, codes);
+    const registrationDate =
+      registrationDateIndex === -1
+        ? null
+        : convertRocDate(fields[registrationDateIndex] ?? "");
+
+    result.set(uniformId, { codes, registrationDate });
   }
 
   return result;

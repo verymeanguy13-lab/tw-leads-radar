@@ -2,6 +2,7 @@ import * as fs from "fs";
 import iconv from "iconv-lite";
 import { parse } from "csv-parse/sync";
 import { db } from "../db";
+import { convertRocDate } from "../parsing/roc-date";
 
 export interface NormalizedRow {
   uniform_id: string;
@@ -62,21 +63,6 @@ function decodeBuffer(buffer: Buffer, encoding: "utf-8" | "big5"): string {
     return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
   }
   return iconv.decode(buffer, "big5");
-}
-
-function convertRocDate(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!/^\d{5,7}$/.test(trimmed)) return null;
-  const mmdd = trimmed.slice(-4);
-  const yearPart = trimmed.slice(0, -4);
-  const rocYear = parseInt(yearPart, 10);
-  const month = mmdd.slice(0, 2);
-  const day = mmdd.slice(2, 4);
-  if (isNaN(rocYear)) return null;
-  const mm = parseInt(month, 10);
-  const dd = parseInt(day, 10);
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-  return `${rocYear + 1911}-${month}-${day}`;
 }
 
 function parseCapital(raw: string): number | null {

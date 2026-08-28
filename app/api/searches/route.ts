@@ -1,11 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withUserContext } from "@/lib/db";
 import { getUserTier, canCreateSavedSearch, isCadenceAllowed } from "@/lib/tiers";
 
 const VALID_ENTITY_TYPES = ["company", "business", "both"];
 const VALID_CADENCE = ["weekly", "monthly"];
+
+// GET — list the signed-in user's own saved searches.
+//
+// Added because /searches (the page that lists them) and the app's
+// login redirect both assumed this existed, but only POST was ever
+// built here. Without it there was no way - UI or API - for a user to
+// ever find their way back to a saved search's results page after the
+// one-time creation redirect, other than clicking a link in a digest
+// email if one happened to have been sent. RLS's saved_searches_isolation
+// policy (via withUserContext) means this can only ever return the
+// caller's own rows.
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "請先登入。" }, { status: 401 });
+  }
+
+  const sql = db();
+  const userRows = await sql`SELECT id FROM users WHERE email = ${session.user.email}`;
+  const userId = userRows[0]?.id as string | undefined;
+  if (!userId) {
+    return NextResponse.json({ error: "找不到使用者。" }, { status: 401 });
+  }
+
+  const searches = await withUserContext(userId, (sqlClient) =>
+    sqlClient`
+      SELECT
+        ss.id, ss.name, ss.cadence, ss.paused, ss.created_at,
+        count(sm.id) AS match_count
+      FROM saved_searches ss
+      LEFT JOIN search_matches sm ON sm.saved_search_id = ss.id
+      WHERE ss.user_id = ${userId}
+      GROUP BY ss.id
+      ORDER BY ss.created_at DESC
+    `
+  );
+
+  return NextResponse.json({ searches }, { status: 200 });
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);

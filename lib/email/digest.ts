@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { db } from "../db";
 import { formatCapital, formatDate } from "../utils";
+import { getUserTier } from "../tiers";
 import type { Company } from "../../types/db";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -23,6 +24,7 @@ export interface DueSearch {
   id: string;
   name: string;
   cadence: string;
+  userId: string;
   userEmail: string;
 }
 
@@ -43,6 +45,7 @@ export async function getDueSavedSearches(): Promise<DueSearch[]> {
       ss.id,
       ss.name,
       ss.cadence,
+      u.id AS user_id,
       u.email AS user_email,
       (
         SELECT MAX(sm.surfaced_at)
@@ -59,22 +62,41 @@ export async function getDueSavedSearches(): Promise<DueSearch[]> {
     id: string;
     name: string;
     cadence: string;
+    user_id: string;
     user_email: string;
     last_sent_at: string | null;
   }[]) {
     if (r.cadence === "weekly") {
-      due.push({ id: r.id, name: r.name, cadence: r.cadence, userEmail: r.user_email });
+      due.push({
+        id: r.id,
+        name: r.name,
+        cadence: r.cadence,
+        userId: r.user_id,
+        userEmail: r.user_email,
+      });
       continue;
     }
     // monthly
     if (!r.last_sent_at) {
-      due.push({ id: r.id, name: r.name, cadence: r.cadence, userEmail: r.user_email });
+      due.push({
+        id: r.id,
+        name: r.name,
+        cadence: r.cadence,
+        userId: r.user_id,
+        userEmail: r.user_email,
+      });
       continue;
     }
     const daysSinceLastSent =
       (Date.now() - new Date(r.last_sent_at).getTime()) / (1000 * 60 * 60 * 24);
     if (daysSinceLastSent >= MONTHLY_DUE_AFTER_DAYS) {
-      due.push({ id: r.id, name: r.name, cadence: r.cadence, userEmail: r.user_email });
+      due.push({
+        id: r.id,
+        name: r.name,
+        cadence: r.cadence,
+        userId: r.user_id,
+        userEmail: r.user_email,
+      });
     }
   }
   return due;
@@ -157,11 +179,28 @@ function renderCompanyRow(
 export async function sendDigestForSearch(search: DueSearch): Promise<DigestSendResult> {
   const sql = db();
 
+  // Freshness-tier gating (same rule as lib/matching/engine.ts's
+  // matchSearch() and app/(app)/searches/[id]/page.tsx): free tier only
+  // gets entity_type='company' rows once companies.registration_date is
+  // 30+ days old (falling back to created_at when registration_date is
+  // NULL) - registration_date is the company's actual government
+  // registration date, not when our system happened to import the row,
+  // which matters a lot here since Session 20b's historical backfill
+  // bulk-inserted ~43,599 rows within one recent window (see
+  // matchSearch()'s comment for the full story of why created_at alone
+  // was wrong). Applied here too, not just at match-time, because
+  // matchSearch() only ever inserts into search_matches and never
+  // deletes - a row that matched before this gate existed, or before a
+  // downgrade, would otherwise still get emailed out.
+  const tier = await getUserTier(search.userId);
+  const isFreeTier = tier === "free";
+
   const newMatches = await sql`
     SELECT c.*, sm.id AS match_id
     FROM search_matches sm
     JOIN companies c ON c.uniform_id = sm.company_uniform_id
     WHERE sm.saved_search_id = ${search.id} AND sm.surfaced_in_digest = false
+      AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
     ORDER BY c.registration_date DESC NULLS LAST
   `;
 
@@ -173,6 +212,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       AND sm.surfaced_in_digest = true
       AND (c.status = 'dissolved' OR c.status = 'changed')
       AND c.status_updated_at > sm.surfaced_at
+      AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
     ORDER BY c.status_updated_at DESC
   `;
 
