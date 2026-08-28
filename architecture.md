@@ -802,15 +802,18 @@ picture.
 - If the `NEXTAUTH_URL` GitHub Actions secret from Session 16 wasn't
   actually added yet, the digest email's "view full results" link will
   be broken even though sending itself works fine.
-- `/searches` (bare index) is not a defined route anywhere in the
-  blueprint — only `/searches/new` (Session 13) and `/searches/[id]`
-  (Session 14) are ever specified. Not a bug; just don't expect a page
-  at the bare path.
+- RESOLVED 2026-08-27 (this was wrong — see the post-Session-23 entry
+  below): this item previously said "/searches (bare index) is not a
+  defined route... Not a bug; just don't expect a page at the bare
+  path." That was true to the blueprint's spec but wrong in practice —
+  it silently combined with the login page's callbackUrl default and
+  free tier's 1-search limit to leave a real user unable to ever
+  navigate back to their own saved search. Built now; see below.
 - Session 11's inline-attribution objective remains genuinely
   incomplete, not just unchecked.
-- The freshness-tier enforcement logic (which tier sees which data)
-  is not built — see Session 12's caveat above. This, not "pricing
-  copy needs a rewrite," is the accurate current gap.
+- RESOLVED 2026-08-27: the freshness-tier enforcement logic is now
+  built — see the post-Session-23 entry below for the full story
+  (it took three attempts to get right).
 - `middleware.ts` uses Next.js's deprecated "middleware" convention
   (Next 16 wants "proxy" instead). Still works, just deprecated — low
   priority, but it's the file guarding `/searches`, `/account`,
@@ -830,3 +833,102 @@ picture.
   note was simply never removed after Session 19 actually shipped —
   left here as a reminder to double-check "Known open items" against
   the real code before assuming something isn't built.
+
+## Post-Session-23 fixes — 2026-08-27 (freshness-tier gating, missing navigation, delete)
+
+Not a numbered blueprint session — ad-hoc bug-fixing that came out of
+attempting to verify the "Known open items" freshness-tier gap above,
+before starting Session 24 (Deploy). Four real, separate bugs found and
+fixed, in the order they surfaced:
+
+**1. Freshness-tier gating was completely unenforced.** The pricing page
+promises free tier only "30天以上之公司資料." Nothing checked this
+anywhere — `matchSearch()` (`lib/matching/engine.ts`) had no tier
+awareness at all. Fixed in three attempts, because the first two were
+each wrong in a way that only showed up once tested against real data:
+
+  - *Attempt 1:* gated on `companies.created_at`, and only at
+    write-time (inside `matchSearch()`). This was wrong on two counts.
+    First, `matchSearch()` only ever `INSERT`s into `search_matches`
+    (`ON CONFLICT DO NOTHING`) and never deletes — every read path
+    (results page, digest email) reads straight from that
+    pre-computed table, so a write-time-only gate does nothing about
+    matches that were already stored before the gate existed. Second,
+    `created_at` measures when *we* imported a row, not how old the
+    company itself is — meaningless as a freshness signal right after
+    a bulk historical backfill, since nearly the whole table shares
+    almost the same `created_at`.
+  - *Attempt 2:* moved enforcement to read-time too (results page in
+    `app/(app)/searches/[id]/page.tsx`, digest email in
+    `lib/email/digest.ts`, in addition to the write-time gate) and
+    switched the gated field to `registration_date` — the company's
+    actual government registration date, already the documented
+    "source of truth for new" per this file's schema table above.
+    This immediately zeroed out a real free-tier test search. Turned
+    out `registration_date` was `NULL` for most established companies:
+    the `公司登記混搭 CSV` (used since Session 20b for industry-code
+    enrichment) has always carried a `核准設立日期` column with the
+    real date, but `parseIndustryCsv()` only ever extracted the
+    uniform ID and industry codes — that column was parsed by nothing
+    and discarded. The `company_new` government dataset doesn't have
+    the retention to cover older companies either, so most established
+    companies had no registration date captured from any source.
+  - *Attempt 3 (final):* extended `parseIndustryCsv()` to also extract
+    and parse `核准設立日期` (new shared parser at
+    `lib/parsing/roc-date.ts`, replacing a private, less flexible
+    duplicate that used to live in `lib/ingestion/normalize.ts`), and
+    extended `scripts/backfill-industry-codes.ts` to also write
+    `registration_date` (`COALESCE`d — only fills when currently
+    `NULL`, never overwrites a known date). Verified live: re-ran the
+    backfill against the existing downloaded CSVs, filled in 15,236
+    previously-`NULL` registration dates out of 19,614 matched rows.
+    Free-tier test search went from 21 stale-looking matches to 200+
+    pages of realistic results correctly capped at ~30 days ago.
+  - Final gate condition, applied identically at write-time (defense
+    in depth — keeps `search_matches` from accumulating rows a free
+    user shouldn't see in the first place) and at all three read
+    points: `entity_type = 'business' OR NOT isFreeTier OR
+    COALESCE(registration_date, created_at::date) <= (now() - interval
+    '30 days')::date`. The `entity_type = 'business'` exemption matches
+    the pricing page's own footnote — 商業 (獨資/合夥) data is monthly-
+    cadence for every tier already, so gating it further would be
+    meaningless.
+
+**2. No way to navigate back to an existing saved search.** `/searches`
+(the login page's redirect target) was never a real route — only
+`/searches/new` and `/searches/[id]` existed, and there was no `GET` on
+`/api/searches` either (only `POST`). The only way to ever reach a
+saved search's results page was the one-time redirect right after
+creating it, or a link in a digest email if one had been sent. This
+affected every user, not just free tier — a paying user with several
+searches had the same dead end. Combined with free tier's 1-search
+limit and `login/page.tsx`'s callback default pointing to
+`/searches/new` (not `/searches`), a free-tier user who'd already used
+their one slot had no way to ever reach it again through the UI. Fixed:
+added `GET /api/searches` and `app/(app)/searches/page.tsx` (lists a
+user's own saved searches, RLS-scoped via `withUserContext`, same
+pattern as everywhere else), and corrected `login/page.tsx`'s default
+callbackUrl from `/searches/new` to `/searches`.
+
+**3. No way to delete a saved search — at all, for anyone.** No
+`DELETE` route existed under `/api/searches/[id]` (only `/run` and
+`/export` sub-routes did), and no delete button existed anywhere.
+Especially bad for free tier: the one saved-search slot was otherwise
+permanent. Fixed: added `DELETE /api/searches/[id]/route.ts` (ownership-
+checked via RLS, relies on `search_matches`'s existing `ON DELETE
+CASCADE` for cleanup — no separate delete-matches query needed) and a
+new `components/DeleteSearchButton.tsx`, wired into both the results
+page and the new list page.
+
+**Schema: no changes.** `registration_date DATE` already existed,
+already nullable, already documented above as the intended source of
+truth for "new" — this was a matter of actually populating and
+enforcing against it, not a schema gap.
+
+**Verified locally** against `verymeanguy11@gmail.com` (free) and a
+paid test account, end to end: list page renders, Run Now updates
+results, free tier's results correctly stop at ~30 days ago while paid
+tier sees through today, delete removes a search and frees the slot.
+**Not yet verified against production** — confirm the same checks there
+after this is pushed and Vercel finishes deploying, before treating this
+as closed.
