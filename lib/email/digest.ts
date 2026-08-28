@@ -240,10 +240,39 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   );
   const freshness = await getDatasetFreshness(flaggedDatasets);
 
-  const newRowsHtml = newRows.map((r) => renderCompanyRow(r, freshness)).join("");
-  const changedRowsHtml = changedRows
+  // Cap how many rows actually get rendered into the email body - added
+  // 2026-08-28 after this hit Resend's 40MB size limit in production.
+  // Root cause: the same day's registration_date backfill (see
+  // architecture.md's "Post-Session-23 fixes" entry) retroactively made
+  // thousands of previously-invisible matches visible all at once for
+  // broad searches, and this function had no limit on how many of them
+  // it would render as individual HTML table rows - one search alone
+  // tried to render 8,977 rows in a single email. IMPORTANT: `newRows`
+  // and `changedRows` themselves stay un-truncated below (subject line
+  // count and the surfaced_in_digest UPDATE both still use the full
+  // arrays) - only the rendered HTML is capped. Truncating the arrays
+  // themselves would have caused the overflow rows to never get marked
+  // surfaced, meaning they'd count as "new" again next week, forever,
+  // and the same-sized email would just fail the same way again.
+  const MAX_RENDERED_ROWS_PER_SECTION = 50;
+  const newRowsToRender = newRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);
+  const changedRowsToRender = changedRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);
+
+  const newRowsHtml = newRowsToRender.map((r) => renderCompanyRow(r, freshness)).join("");
+  const changedRowsHtml = changedRowsToRender
     .map((r) => renderCompanyRow(r, freshness, { statusChangeNotice: true }))
     .join("");
+
+  const newOverflowCount = newRows.length - newRowsToRender.length;
+  const changedOverflowCount = changedRows.length - changedRowsToRender.length;
+  const newOverflowNote =
+    newOverflowCount > 0
+      ? `<p style="color:#6b7280;font-size:12px;margin-top:8px;">還有 ${newOverflowCount} 筆新符合結果未顯示，請登入查看完整清單。</p>`
+      : "";
+  const changedOverflowNote =
+    changedOverflowCount > 0
+      ? `<p style="color:#6b7280;font-size:12px;margin-top:8px;">還有 ${changedOverflowCount} 筆狀態異動未顯示，請登入查看完整清單。</p>`
+      : "";
 
   const subjectParts: string[] = [];
   if (newRows.length > 0) subjectParts.push(`${newRows.length} 筆新符合結果`);
@@ -253,12 +282,12 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   const sectionsHtml = `
     ${
       newRows.length > 0
-        ? `<h3 style="margin-bottom:4px;">新符合結果</h3><table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${newRowsHtml}</table>`
+        ? `<h3 style="margin-bottom:4px;">新符合結果</h3><table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${newRowsHtml}</table>${newOverflowNote}`
         : ""
     }
     ${
       changedRows.length > 0
-        ? `<h3 style="margin-bottom:4px;">狀態異動通知</h3><table style="width:100%;border-collapse:collapse;">${changedRowsHtml}</table>`
+        ? `<h3 style="margin-bottom:4px;">狀態異動通知</h3><table style="width:100%;border-collapse:collapse;">${changedRowsHtml}</table>${changedOverflowNote}`
         : ""
     }
   `;
