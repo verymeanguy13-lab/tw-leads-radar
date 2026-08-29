@@ -42,6 +42,14 @@ import { getUserTier } from "../tiers";
  * rows aren't permanently hidden from free tier over missing data.
  *
  * Returns the number of newly-created matches (not total matches).
+ *
+ * suppressed_at (added 2026-08-28): excludes any company with an
+ * approved PDPA data-removal request - see db/schema.sql's comment on
+ * data_removal_requests for the full rationale. Checked here (write
+ * time) AND at every read point (results page, digest email), same
+ * defense-in-depth reasoning as the freshness gate above - a company
+ * suppressed after it was already matched into search_matches must
+ * stop appearing everywhere, not just stop being newly matched.
  */
 export async function matchSearch(searchId: string): Promise<number> {
   const sql = db();
@@ -82,6 +90,7 @@ export async function matchSearch(searchId: string): Promise<number> {
         OR ${!isFreeTier}
         OR COALESCE(registration_date, created_at::date) <= (now() - interval '30 days')::date
       )
+      AND suppressed_at IS NULL
   `;
 
   if (matches.length === 0) return 0;

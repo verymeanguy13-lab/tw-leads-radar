@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS companies (
     source_dataset TEXT,
     source_month TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    suppressed_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_companies_industry_codes ON companies USING GIN (industry_codes);
@@ -52,6 +53,34 @@ CREATE INDEX IF NOT EXISTS idx_companies_name_trgm ON companies USING GIN (name 
 CREATE INDEX IF NOT EXISTS idx_companies_registration_date ON companies(registration_date);
 CREATE INDEX IF NOT EXISTS idx_companies_address_region ON companies(address_region);
 CREATE INDEX IF NOT EXISTS idx_companies_status ON companies(status);
+CREATE INDEX IF NOT EXISTS idx_companies_suppressed_at ON companies(suppressed_at) WHERE suppressed_at IS NOT NULL;
+
+-- Added 2026-08-28: PDPA data-removal request mechanism. A listed
+-- business's responsible person (or the business itself) can request
+-- their record stop appearing in search results and notification
+-- emails. Requests are reviewed manually (not auto-applied) to prevent
+-- abuse - e.g. a competitor trying to suppress a rival's visibility, or
+-- someone impersonating a business they don't represent. Approving a
+-- request sets companies.suppressed_at, which every match/read query
+-- (lib/matching/engine.ts, the results page, the digest email) checks
+-- and excludes. This does not resolve the underlying open legal
+-- question of whether repackaging public GCIS data for lead-generation
+-- use satisfies PDPA's purpose-limitation requirement - it exists
+-- regardless of how that question resolves, since PDPA gives
+-- individuals a right to request processing stop independent of
+-- whether the original processing was itself lawful.
+CREATE TABLE IF NOT EXISTS data_removal_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    uniform_id VARCHAR(8),
+    company_name_submitted TEXT NOT NULL,
+    requester_email TEXT NOT NULL,
+    reason TEXT,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_removal_requests_status ON data_removal_requests(status);
 
 CREATE TABLE IF NOT EXISTS saved_searches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

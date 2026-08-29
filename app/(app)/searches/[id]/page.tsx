@@ -92,6 +92,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.registration_date ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -102,6 +103,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.capital DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -112,6 +114,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.capital ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -122,6 +125,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.address_region DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -132,6 +136,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.address_region ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -143,6 +148,7 @@ async function fetchPage(
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
           AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+          AND c.suppressed_at IS NULL
         ORDER BY c.registration_date DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `;

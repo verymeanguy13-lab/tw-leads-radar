@@ -201,6 +201,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
     JOIN companies c ON c.uniform_id = sm.company_uniform_id
     WHERE sm.saved_search_id = ${search.id} AND sm.surfaced_in_digest = false
       AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+      AND c.suppressed_at IS NULL
     ORDER BY c.registration_date DESC NULLS LAST
   `;
 
@@ -213,6 +214,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       AND (c.status = 'dissolved' OR c.status = 'changed')
       AND c.status_updated_at > sm.surfaced_at
       AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
+      AND c.suppressed_at IS NULL
     ORDER BY c.status_updated_at DESC
   `;
 

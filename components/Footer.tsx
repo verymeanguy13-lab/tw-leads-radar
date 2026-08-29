@@ -1,3 +1,4 @@
+import Link from "next/link";
 import DataAttribution from "./DataAttribution";
 
 const CURRENT_YEAR = new Date().getFullYear().toString();
@@ -16,6 +17,11 @@ export default function Footer() {
   return (
     <footer className="border-t border-default mt-auto py-6 px-8">
       <DataAttribution datasets={ALL_SIX_DATASETS} />
+      <p className="text-xs text-secondary mt-3">
+        <Link href="/data-removal" className="underline">
+          資料移除請求
+        </Link>
+      </p>
     </footer>
   );
 }
