@@ -932,3 +932,61 @@ tier sees through today, delete removes a search and frees the slot.
 **Not yet verified against production** — confirm the same checks there
 after this is pushed and Vercel finishes deploying, before treating this
 as closed.
+
+## Post-Session-23 fixes, continued — 2026-08-30 (data gap + missing alerting; PDPA removal feature)
+
+**1. PDPA data-removal request mechanism added.** New public form at
+`/data-removal`, admin review queue at `/admin/data-removal-requests`
+(requires manual approval — auto-applying a public removal request
+would be trivially abusable by a competitor targeting a rival's
+listing). Approving a request sets the new `companies.suppressed_at`
+column, checked at write-time (`matchSearch()`) and all three read
+points (results page, digest email) — same defense-in-depth pattern as
+the freshness gate. This does not resolve the underlying open question
+of whether repackaging public GCIS data for lead-generation use
+satisfies PDPA's purpose-limitation requirement (see the
+`shihjungching@gmail.com` account's conversation history for the fuller
+discussion) — it exists regardless of how that resolves, since PDPA
+gives individuals a right to request processing stop independent of
+whether the original processing was lawful. Verified end-to-end in
+production: submitted a real test request, approved it, confirmed the
+company actually disappeared from a live saved search's results.
+
+**2. Discovered an 11-day company-wide data gap: 2026-08-01 to
+2026-08-11, zero companies with a registration_date in that window,
+across the entire database, not just one filtered search.** Root cause:
+a pipeline handoff gap between the old and new ingestion sources.
+`company_new` (the periodic government bulk dataset, ~45-day cadence)
+last covered through 2026-07-31; the new daily live-discovery pipeline
+(`gcis_daily_setup_query`, wired into `run-ingest-daily.ts`) didn't
+start reliably capturing new registrations until 2026-08-12. Nothing
+was watching for new registrations in the 11 days between those two
+sources' coverage. This will very likely self-correct once a future
+monthly bulk release covering August is published and ingested
+(~45-day cadence means possibly not until mid-to-late September) — not
+fixed proactively, just noting it's expected to resolve on its own.
+**Practical impact to watch for:** free tier's 30-day cutoff means this
+exact window will become directly visible to free-tier users around
+early-to-mid September — expect it to look like a real (accurate) gap
+in their results, not a bug, if this hasn't self-corrected by then.
+
+**3. Found and fixed a real alerting gap while investigating the above:
+`ingest-daily.yml`'s only failure handling was a `::error::` log
+annotation inside GitHub's own Actions UI — no email, no notification
+that would actually reach a person.** This is the mechanism that let
+the Aug 1–11 gap (and any future recurrence) go completely unnoticed
+until someone happened to spot it in the product. Fixed by reusing the
+exact same Resend-based failure-alert pattern `refresh-industry-csv.yml`
+already had (a direct `curl` call to Resend's API using the
+`RESEND_API_KEY` / `EMAIL_FROM` / `ALERT_EMAIL` GitHub Actions secrets
+already configured for that workflow) rather than inventing a second
+alerting mechanism. This matters more for paid tier than free tier:
+paid customers see today's data with no buffer at all, so a silent
+multi-day ingestion failure directly costs them the exact freshness
+they're paying for, with no cushion the way free tier's 30-day gate
+provides.
+
+**Schema change:** `companies.suppressed_at TIMESTAMPTZ` (nullable,
+indexed with a partial index `WHERE suppressed_at IS NOT NULL`) and new
+table `data_removal_requests`. Migration:
+`scripts/migrate-add-data-removal.ts` (idempotent, safe to re-run).
