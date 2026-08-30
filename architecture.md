@@ -990,3 +990,84 @@ provides.
 indexed with a partial index `WHERE suppressed_at IS NOT NULL`) and new
 table `data_removal_requests`. Migration:
 `scripts/migrate-add-data-removal.ts` (idempotent, safe to re-run).
+
+## Post-Session-23 fixes, continued — 2026-08-30, part 2 (silent industry-code/region fetch failures; self-healing retry)
+
+Found while investigating a user-reported "date gap" in a filtered
+search's results for 2026-08-12 to 2026-08-25 — initially assumed to be
+sparse-filter variance, but turned out to be a real, previously-unknown
+bug, worse than the already-logged 08-01/08-11 gap above because it was
+silently ongoing, not a one-time historical hole.
+
+**What was found:** `scripts/check-daily-pipeline-field-completeness.ts`
+and `scripts/check-field-completeness-by-age.ts` (both one-off
+diagnostics, kept in the repo) showed that `gcis_daily_setup_query`
+-sourced companies registered 2026-08-18 through 2026-08-25 — six
+straight days — had a **0% success rate** for fetching
+`industry_codes`, and two isolated days (08-12, 08-14) had 0% for
+`address_region`. The clean on/off pattern (0% then a sudden jump back
+to ~100% on 08-26) ruled out "GCIS just hasn't processed very new
+registrations yet" as the explanation (that would show gradual
+improvement, not a binary switch) — this was a real fetch failure of
+some kind, most likely on GCIS's side, though the exact cause was never
+identified.
+
+**Why nothing caught this at the time:** `fetch-live-industry.ts`
+returns `null` on any failure, but `run-ingest-daily.ts` immediately
+collapsed that into `liveIndustryCodesResult ?? []` — making "the API
+call failed" and "this company genuinely has zero classified business
+items" indistinguishable everywhere downstream. The job's own
+`console.error` calls only went to that day's raw GitHub Actions log,
+which nobody was reading line-by-line. Every affected day's
+`ingestion_runs.status` still logged `'success'` — even the alerting
+fix added earlier the same day (part 1, above) would NOT have caught
+this, since it only fires on the whole job actually failing, not on a
+step silently degrading while the job still exits 0. Compounding this:
+`run-ingest-daily.ts` only ever processes "yesterday" and "today" — a
+company that failed during this window was never going to be looked at
+again by anything, ever, once those two days passed.
+
+**Fix, in `scripts/run-ingest-daily.ts`:**
+- Track `industryCodeAttempts`/`industryCodeSuccesses` and
+  `regionAttempts`/`regionSuccesses` per run (a "success" requires
+  actually getting a non-empty result back, not just the call not
+  throwing).
+- After each run, if either success rate falls below `DEGRADED_THRESHOLD`
+  (50% — deliberately generous; the real incident sat at 0% for six
+  days straight, nowhere near this line), the run is marked `'failed'`
+  in `ingestion_runs` with a descriptive `error_log` even though no
+  individual call threw an exception. This is what makes the
+  Resend alert (part 1) actually fire for this failure mode — updated
+  its email copy to explain the self-healing retry below and say
+  "you probably don't need to do anything unless this keeps recurring
+  for several days," rather than demanding manual action for something
+  that mostly fixes itself.
+- New `retryRecentGaps()` function, called at the end of every daily
+  run regardless of that day's own success rate: finds up to
+  `RETRY_CAP` (100 — deliberately kept in the same range as the
+  already-proven-safe ~80-150/day discovery volume, not pushed higher
+  just to clear a backlog faster, since GCIS's exact rate-limit
+  thresholds aren't documented anywhere accessible) `entity_type =
+  'company'` rows sourced from `gcis_daily_setup_query` in the last 14
+  days still missing `address_region` and/or `industry_codes`, and
+  re-attempts both live API calls for each. Only writes a field if the
+  retry actually improved on what was there (`COALESCE`/cardinality
+  checks in the `UPDATE`), never clobbers an already-good value. This
+  is what turns "a multi-day outage" into something that heals itself
+  over the following several days once the underlying cause clears,
+  instead of leaving a permanent hole the way the 08-18/08-25 incident
+  otherwise would have.
+
+**Verified live:** manually triggered `ingest-daily.yml` after
+deploying this — log showed `retryRecentGaps: attempting 100 companies
+with missing fields... 100/100 improved`. 100% success on the retry
+batch is a strong signal the underlying GCIS-side issue (whatever it
+was) has genuinely resolved. Given the cap of 100/run and an estimated
+backlog of roughly 800 affected companies from the original incident,
+full catch-up will take several more days of scheduled runs, with no
+action needed.
+
+**No schema.sql changes** — this was entirely application-logic (new
+function, new in-memory counters); no new columns or tables were
+needed.
+
