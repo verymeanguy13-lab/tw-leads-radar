@@ -127,6 +127,20 @@ export default async function SearchesListPage() {
           ))}
         </ul>
       )}
+
+      {session.user.email === process.env.ADMIN_EMAIL && (
+        <div className="mt-10 pt-6 border-t" style={{ borderColor: "var(--border)" }}>
+          <h2 className="text-sm font-semibold text-secondary mb-2">管理員工具</h2>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <Link href="/admin/ingestion" className="underline">
+              資料匯入狀態
+            </Link>
+            <Link href="/admin/data-removal-requests" className="underline">
+              資料移除請求審核
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
