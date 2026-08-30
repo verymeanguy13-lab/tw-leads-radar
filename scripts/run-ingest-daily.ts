@@ -115,11 +115,107 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 2026-08-30: self-healing retry for recently-discovered companies
+// still missing address_region and/or industry_codes. Added after
+// finding a real 6-day incident (2026-08-18 to 2026-08-25) where the
+// live industry API silently failed for ~100% of that window's
+// companies, and — since this daily job previously only ever looked
+// at "yesterday" and "today" — those companies were NEVER retried
+// again by anything, permanently. This closes that gap: every run
+// re-attempts any gcis_daily_setup_query company from the last 14 days
+// that's still missing either field, so a multi-day outage like the
+// one already found self-heals automatically within a few days of
+// GCIS (or whatever failed) recovering, with no one needing to notice
+// an alert and manually intervene.
+//
+// Scoped to source_dataset = 'gcis_daily_setup_query' only (not CSV-
+// sourced or entity_type='business' rows) — those have their own
+// separate monthly backfill path already. Capped at RETRY_CAP per run
+// to keep this a bounded catch-up operation, not an open-ended one —
+// if a much larger backlog ever accumulated than this cap can clear in
+// one run, it will simply take a few more days to fully catch up
+// rather than blowing up a single run's duration or API call volume.
+// Deliberately kept in the same range as the already-proven-safe daily
+// discovery volume (~80-150/day, see fetch-live-industry.ts's header
+// comment on the bulk-backfill wall) rather than pushed higher just to
+// clear a backlog faster — GCIS's exact rate-limit thresholds aren't
+// documented anywhere accessible, so staying well clear of anything
+// resembling the volume that triggered the original wall is safer than
+// optimizing for catch-up speed.
+const RETRY_CAP = 100;
+
+async function retryRecentGaps(runStats: {
+  retryAttempts: number;
+  retrySuccesses: number;
+}) {
+  const gaps = await sql`
+    SELECT uniform_id
+    FROM companies
+    WHERE entity_type = 'company'
+      AND source_dataset = 'gcis_daily_setup_query'
+      AND registration_date >= (CURRENT_DATE - INTERVAL '14 days')
+      AND (
+        address_region IS NULL OR address_region = ''
+        OR industry_codes IS NULL OR array_length(industry_codes, 1) IS NULL
+      )
+    ORDER BY registration_date ASC
+    LIMIT ${RETRY_CAP}
+  `;
+
+  if (gaps.length === 0) {
+    console.log("retryRecentGaps: no gaps found in the last 14 days.");
+    return;
+  }
+  console.log(`retryRecentGaps: attempting ${gaps.length} companies with missing fields...`);
+
+  for (const row of gaps) {
+    const uniformId = row.uniform_id as string;
+    runStats.retryAttempts++;
+    try {
+      const profile = await fetchProfile(uniformId);
+      await sleep(PROFILE_FETCH_DELAY_MS);
+      const liveIndustryCodesResult = await fetchLiveIndustryCodes(uniformId);
+      await sleep(PROFILE_FETCH_DELAY_MS);
+
+      const { region, district } = parseAddress(profile?.Company_Location ?? "");
+      const industryCodes = liveIndustryCodesResult ?? [];
+
+      if (!region && industryCodes.length === 0) {
+        continue; // still no improvement this time, leave as-is for a future run
+      }
+
+      await sql`
+        UPDATE companies
+        SET
+          address_region = COALESCE(NULLIF(address_region, ''), ${region}),
+          address_district = COALESCE(address_district, ${district}),
+          industry_codes = CASE
+            WHEN COALESCE(cardinality(industry_codes), 0) = 0 AND ${industryCodes}::text[] != '{}'
+              THEN ${industryCodes}::text[]
+            ELSE industry_codes
+          END
+        WHERE uniform_id = ${uniformId}
+      `;
+      runStats.retrySuccesses++;
+    } catch (err) {
+      console.error(`retryRecentGaps failed on ${uniformId}:`, err);
+    }
+  }
+
+  console.log(
+    `retryRecentGaps: ${runStats.retrySuccesses}/${runStats.retryAttempts} improved.`
+  );
+}
+
 async function ingestDate(rocDate: string, runStats: {
   rowCount: number;
   newCount: number;
   updatedCount: number;
   parseFailures: number;
+  industryCodeAttempts: number;
+  industryCodeSuccesses: number;
+  regionAttempts: number;
+  regionSuccesses: number;
 }) {
   const discovered = await fetchAllForDate(rocDate);
   console.log(`${rocDate}: ${discovered.length} companies from discovery API`);
@@ -149,9 +245,27 @@ async function ingestDate(rocDate: string, runStats: {
       // improvement layered on top of that existing safety net, not a
       // replacement for it.
 
+      // 2026-08-30: track same-day success rate for BOTH industry
+      // codes and address_region separately from parseFailures (which
+      // only counts hard exceptions). A real 6-day incident happened
+      // where fetchLiveIndustryCodes() silently returned null for
+      // ~100% of that day's companies every single day, but every run
+      // still reported overall "success" -- ingestDate() never threw,
+      // parseFailures stayed 0, and the resulting empty arrays are
+      // indistinguishable downstream from a company genuinely having
+      // no classified business items yet. These counters let main()
+      // check the aggregate rate after processing and flag a run as
+      // degraded even though no individual call ever threw.
+      runStats.industryCodeAttempts++;
+      if (liveIndustryCodesResult !== null && liveIndustryCodesResult.length > 0) {
+        runStats.industryCodeSuccesses++;
+      }
+      runStats.regionAttempts++;
+      const { region, district } = parseAddress(profile?.Company_Location ?? "");
+      if (region) runStats.regionSuccesses++;
+
       const registrationDate = rocDateToIso(rocDate);
       const rawAddress = profile?.Company_Location ?? null;
-      const { region, district } = parseAddress(rawAddress || "");
 
       const existing = await sql`
         SELECT uniform_id FROM companies WHERE uniform_id = ${row.Business_Accounting_NO}
@@ -215,12 +329,30 @@ async function ingestDate(rocDate: string, runStats: {
   }
 }
 
+// A run is "degraded" when a large share of a day's companies came
+// back with no industry codes or no region at all — the exact,
+// invisible-until-now failure mode found on 2026-08-30. Threshold is
+// deliberately generous (50%) to avoid false alarms from ordinary
+// day-to-day variance; the real incident this was built to catch sat
+// at 0% for six straight days, nowhere near this line.
+const DEGRADED_THRESHOLD = 0.5;
+
 async function main() {
   const startedAt = new Date();
   const manualDate = process.env.ROC_DATE;
   const dates = manualDate ? [manualDate] : [yesterdayRocDate(), todayRocDate()];
 
-  const runStats = { rowCount: 0, newCount: 0, updatedCount: 0, parseFailures: 0 };
+  const runStats = {
+    rowCount: 0,
+    newCount: 0,
+    updatedCount: 0,
+    parseFailures: 0,
+    industryCodeAttempts: 0,
+    industryCodeSuccesses: 0,
+    regionAttempts: 0,
+    regionSuccesses: 0,
+  };
+  const retryStats = { retryAttempts: 0, retrySuccesses: 0 };
   let status: "success" | "failed" | "partial" = "success";
   let errorLog: string | null = null;
 
@@ -229,6 +361,31 @@ async function main() {
       await ingestDate(rocDate, runStats);
     }
     if (runStats.parseFailures > 0) status = "partial";
+
+    const industryRate =
+      runStats.industryCodeAttempts > 0
+        ? runStats.industryCodeSuccesses / runStats.industryCodeAttempts
+        : 1;
+    const regionRate =
+      runStats.regionAttempts > 0 ? runStats.regionSuccesses / runStats.regionAttempts : 1;
+
+    if (industryRate < DEGRADED_THRESHOLD || regionRate < DEGRADED_THRESHOLD) {
+      status = "failed";
+      errorLog =
+        `Degraded run: industry_codes success rate ${(industryRate * 100).toFixed(0)}% ` +
+        `(${runStats.industryCodeSuccesses}/${runStats.industryCodeAttempts}), ` +
+        `address_region success rate ${(regionRate * 100).toFixed(0)}% ` +
+        `(${runStats.regionSuccesses}/${runStats.regionAttempts}). ` +
+        `Companies were still discovered and stored, just missing these fields — ` +
+        `they will be automatically retried by retryRecentGaps() on subsequent runs ` +
+        `for up to 14 days without any manual action needed.`;
+      console.error(errorLog);
+    }
+
+    // Runs regardless of today's degraded status — this is what
+    // actually closes historical gaps like the 2026-08-18 to 08-25
+    // incident, not just flags new ones.
+    await retryRecentGaps(retryStats);
   } catch (err) {
     status = "failed";
     errorLog = String(err);
@@ -254,7 +411,8 @@ async function main() {
   `;
 
   console.log(
-    `Done. ${runStats.rowCount} seen, ${runStats.newCount} new, ${runStats.updatedCount} updated, ${runStats.parseFailures} failures. Status: ${status}`
+    `Done. ${runStats.rowCount} seen, ${runStats.newCount} new, ${runStats.updatedCount} updated, ${runStats.parseFailures} failures. ` +
+      `Retry: ${retryStats.retrySuccesses}/${retryStats.retryAttempts} gaps improved. Status: ${status}`
   );
 
   if (status === "failed") process.exit(1);
