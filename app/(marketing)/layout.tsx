@@ -1,6 +1,11 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
-export default function MarketingLayout({ children }: { children: React.ReactNode }) {
+export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
+  const session = await getServerSession(authOptions);
+  const loggedIn = Boolean(session?.user?.email);
+
   return (
     <div className="flex flex-col min-h-full">
       <nav className="border-b border-default px-8 py-4 flex justify-between items-center">
@@ -9,8 +14,11 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         </Link>
         <div className="flex gap-6 items-center text-sm">
           <Link href="/pricing">{"\u5b9a\u50f9"}</Link>
-          <Link href="/login" className="bg-[var(--accent)] text-white rounded px-4 py-2">
-            {"\u767b\u5165"}
+          <Link
+            href={loggedIn ? "/searches" : "/login"}
+            className="bg-[var(--accent)] text-white rounded px-4 py-2"
+          >
+            {loggedIn ? "\u5df2\u5132\u5b58\u641c\u5c0b" : "\u767b\u5165"}
           </Link>
         </div>
       </nav>

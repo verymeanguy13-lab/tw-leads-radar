@@ -1175,3 +1175,59 @@ user); every page shares identical `<title>`/meta-description instead
 of per-page values; no `robots.txt` or sitemap; unused default Next.js
 starter SVGs still in `/public`; no custom 404 page; no `.env.example`.
 
+## Pre-Paddle-live site audit, part 2 — remaining polish items #5-10 — 2026-08-31
+
+Closed out the rest of the same-day audit (part 1 above covered
+#1-4). None of these were blocking, but done before starting Paddle
+live verification since Paddle's own review looks at the live site.
+
+**#5 — Marketing nav didn't reflect logged-in state.**
+`app/(marketing)/layout.tsx` was a plain component with no session
+check, so it always showed "登入" even to an already-authenticated
+user browsing `/` or `/pricing`. **Fix:** made it `async`, calls
+`getServerSession(authOptions)`, and swaps the button to "已儲存搜尋"
+(linking to `/searches`) when logged in.
+
+**#6 — Every page shared one identical `<title>`/meta-description.**
+Root `app/layout.tsx`'s `metadata` applied everywhere with no
+per-page override. **Fix:** switched root metadata to a `title.template`
+(`"%s ｜ 新公司快報"`) and added a page-specific `title` to each
+route: home ("搶先掌握新成立公司"), `/pricing` ("定價"), `/terms`
+("服務條款"), `/privacy` ("隱私權政策"). `/signup`, `/login`, and
+`/data-removal` are client components (can't export `metadata`
+directly), so each got a small sibling `layout.tsx` that exports the
+title and passes `children` straight through.
+
+**#7 — No `robots.txt` or sitemap.** Added `app/robots.ts` (allows
+everything except `/searches`, `/account`, `/admin`; points to the
+sitemap) and `app/sitemap.ts` (lists the public marketing routes only
+— `/`, `/pricing`, `/signup`, `/login`, `/terms`, `/privacy`,
+`/data-removal`). Both are Next.js's built-in special files, so no new
+dependency.
+
+**#8 — Unused default Next.js starter SVGs in `/public`.** Confirmed
+via repo-wide grep that `file.svg`, `globe.svg`, `next.svg`,
+`vercel.svg`, `window.svg` were referenced nowhere. Deleted all five.
+
+**#9 — No custom 404.** Added `app/not-found.tsx`, styled to match the
+rest of the site (same `--accent`/`text-secondary` conventions) instead
+of falling back to Next.js's generic default page.
+
+**#10 — No `.env.example`.** Generated one from an actual repo-wide
+`grep` of every `process.env.*` reference (not from memory/guessing),
+with a one-line comment on what each variable is for. Includes a note
+on `NEXT_PUBLIC_PADDLE_ENV` explaining the sandbox-guard behavior added
+in part 1 (#1) above, and on `ROC_DATE` being a test-only override for
+`scripts/run-ingest-daily.ts`.
+
+**No schema.sql changes** — all six of these are static
+config/routing/metadata only.
+
+**Verified:** tag balance checked programmatically on every
+new/changed `.tsx` file; user ran `npx tsc --noEmit` locally after
+deploying — clean, no errors.
+
+**This closes out the full pre-Paddle-live site audit (#1-10).**
+Next step: start Paddle's live-mode account/domain/identity
+verification (Session 24, item 3, previously deferred).
+

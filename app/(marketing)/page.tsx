@@ -1,4 +1,9 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "搶先掌握新成立公司",
+};
 
 export default function LandingPage() {
   return (

@@ -3,8 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import CheckoutButton from "@/components/CheckoutButton";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "定價",
+};
 
 export default async function PricingPage() {
   const session = await getServerSession(authOptions);

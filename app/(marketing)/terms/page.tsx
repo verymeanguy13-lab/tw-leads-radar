@@ -1,3 +1,9 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "服務條款",
+};
+
 export default function TermsPage() {
   return (
     <div className="px-8 py-16 max-w-2xl mx-auto">

@@ -14,7 +14,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "新公司快報 | New Company Bulletin",
+  title: {
+    default: "新公司快報 | New Company Bulletin",
+    template: "%s ｜ 新公司快報",
+  },
   description: "Taiwan new-business leads, built from free government open data.",
 };
 
