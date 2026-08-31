@@ -1071,3 +1071,49 @@ action needed.
 function, new in-memory counters); no new columns or tables were
 needed.
 
+## Session 24 (Deploy), item 6 — Privacy Policy & Terms of Service drafted — 2026-08-31
+
+Replaced the placeholder stub text in `app/(marketing)/terms/page.tsx`
+and `app/(marketing)/privacy/page.tsx` with full draft content
+(Traditional Chinese), matching existing page styling conventions
+(`px-8 py-16 max-w-2xl mx-auto` container, `font-semibold text-lg`
+section headers).
+
+**Status: DRAFT, NOT lawyer-reviewed.** Both pages carry a visible
+warning banner at the top saying so. `【　　】` placeholders mark
+every spot needing the user's real legal name (not incorporated as of
+this date). Three specific clauses are individually tagged "⚠️ 待律師確認"
+in the rendered text itself, matching the three items already flagged
+in the Session 24 handoff:
+- Terms §6, 資料來源與免責聲明 (data-source disclaimer) — ties directly
+  to the still-open PDPA purpose-limitation question (see "Important
+  open discussions" in the handoff / prior session history).
+- Terms §8, 責任限制 (liability cap) — drafted at "capped at trailing
+  12 months' subscription fees, indirect damages excluded" as a
+  starting position only.
+- Terms §10, 準據法與管轄法院 (governing law/jurisdiction) — left as an
+  open placeholder pending lawyer input, especially given the
+  unincorporated status.
+
+**Added same day, at user's request:** Terms §6 now also explicitly
+disclaims responsibility for service interruption caused by
+third-party infrastructure (GitHub, Neon, Vercel) — ties to the
+already-logged "no uptime/status monitoring exists for
+Vercel/Neon/GitHub Actions" open item.
+
+Privacy Policy structured around Taiwan PDPA's standard required
+disclosure format (特定目的、期間、地區、對象、方式) and explicitly
+covers: the two categories of personal data collected (account email;
+company-registry data containing 負責人姓名), the existing
+`/data-removal` feature as the mechanism for a data subject to request
+removal, and the third-party processors already in use (Paddle,
+Resend, Neon, Vercel).
+
+**Verified:** JSX tag balance checked programmatically (no mismatched
+open/close tags); user ran `npx tsc --noEmit` locally after deploying
+— clean, no errors.
+
+**Next step still open:** get both drafts in front of a real lawyer,
+then come back and replace the `【　　】` placeholders and warning
+banners with final approved text before removing the "draft" status.
+
