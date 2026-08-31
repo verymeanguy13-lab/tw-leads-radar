@@ -1117,3 +1117,61 @@ open/close tags); user ran `npx tsc --noEmit` locally after deploying
 then come back and replace the `【　　】` placeholders and warning
 banners with final approved text before removing the "draft" status.
 
+## Pre-Paddle-live site audit + fixes — 2026-08-31
+
+Full site/repo review requested before starting Paddle's live-mode
+verification, since Paddle's own domain/business review will look at
+the live site. Findings and fixes, in the order addressed:
+
+**#1 — Checkout buttons silently opened a broken sandbox checkout.**
+`components/CheckoutButton.tsx` switches Paddle to sandbox mode
+whenever `NEXT_PUBLIC_PADDLE_ENV=sandbox`, but had no user-facing
+indication of this — a real visitor clicking "開始使用" on plan B/C
+would hit a test-mode checkout that can't take real payment, with no
+explanation. **Fix:** added a `paddleSandbox` check; while sandbox is
+active, both buttons render disabled with "即將開放，敬請期待"
+instead of opening checkout. Reverts to normal automatically the
+moment `NEXT_PUBLIC_PADDLE_ENV` changes to live — no second code
+change needed then. Covers both `/pricing` and `/account` since they
+share this one component.
+
+**#2 — Draft ToS/Privacy pages were publicly live.** The full drafts
+written earlier the same day (with the "⚠️ 草稿" banner and `【 】`
+placeholders — see previous log entry) were live on
+`taiwanleads.com/terms` and `/privacy`, visible to any visitor
+including Paddle's reviewers during domain/business verification.
+**Fix:** reverted both public pages to the original short placeholder
+("本頁面尚待完成。正式法律文件將另行撰寫與發佈。"). The actual
+lawyer-ready drafts still exist, just not deployed publicly until
+approved.
+
+**#3 — No logout control anywhere in the app.** Repo-wide search for
+`signOut`/`登出`/`logout` returned zero matches before this fix.
+
+**#4 — No shared navigation in the authenticated app area.**
+`app/(app)/` (`/searches`, `/searches/new`, `/searches/[id]`,
+`/account`, `/admin/*`) had no `layout.tsx` and no shared header —
+concretely, no way back to `/searches` from `/account` or from a
+search's results page, no logo/home link, nothing.
+
+**Fix for #3+#4 together:** new `components/AppNav.tsx` (client
+component — logo/home link to `/searches`, links to `已儲存搜尋` and
+`帳戶`, and a working 登出 button calling `signOut()` from
+`next-auth/react`, which works without a `<SessionProvider>` the same
+way `signIn()` already did in the signup form) and new
+`app/(app)/layout.tsx` wrapping all pages in that route group with it.
+
+**No schema.sql changes** — all four fixes are UI/application-logic
+only; no new tables or columns.
+
+**Verified:** JSX/tag balance checked programmatically on every
+changed/new file; user ran `npx tsc --noEmit` locally after deploying
+— clean, no errors both times.
+
+**Remaining from the same audit, not yet addressed (lower priority,
+not blocking Paddle):** marketing nav doesn't show a
+logged-in-specific state (always shows "登入" even to an authenticated
+user); every page shares identical `<title>`/meta-description instead
+of per-page values; no `robots.txt` or sitemap; unused default Next.js
+starter SVGs still in `/public`; no custom 404 page; no `.env.example`.
+
