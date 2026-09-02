@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS companies (
     entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN (''company'', ''business'')),
     name TEXT NOT NULL,
     industry_codes TEXT[] DEFAULT ''{}'',
-    industry_codes_checked_at TIMESTAMPTZ,
     capital NUMERIC,
     address_raw TEXT,
     address_region TEXT,

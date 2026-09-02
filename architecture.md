@@ -782,11 +782,10 @@ picture.
 
 ## Known open items carried into Session 21+
 
-- `companies.industry_codes_checked_at` exists in both `db/schema.sql`
-  and the live Neon database but is unused dead schema as of Session
-  20b's revised design (see that session's entry above for why) — not
-  urgent to remove, but don't build new logic assuming it's populated
-  or meaningful.
+- RESOLVED 2026-08-30: `companies.industry_codes_checked_at` removed
+  entirely (`scripts/migrate-drop-industry-codes-checked-at.ts`) —
+  confirmed via full codebase grep it was referenced nowhere except its
+  own schema declaration before dropping it.
 
 - RESOLVED 2026-08-24: the test `pro` subscription row (user id
   `3503f33c-486d-43c2-a63d-73fbc4f69193`, email verymeanguy13@gmail.com,
