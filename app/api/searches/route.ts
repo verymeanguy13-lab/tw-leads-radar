@@ -5,7 +5,7 @@ import { db, withUserContext } from "@/lib/db";
 import { getUserTier, canCreateSavedSearch, isCadenceAllowed } from "@/lib/tiers";
 
 const VALID_ENTITY_TYPES = ["company", "business", "both"];
-const VALID_CADENCE = ["weekly", "monthly"];
+const VALID_CADENCE = ["weekly", "monthly", "daily"];
 
 // GET — list the signed-in user's own saved searches.
 //
@@ -109,10 +109,19 @@ export async function POST(req: NextRequest) {
   const tier = await getUserTier(userId);
 
   if (!isCadenceAllowed(tier, cadence)) {
-    return NextResponse.json(
-      { errors: { cadence: "免費方案僅支援每週通知，請升級方案以使用每月通知。" } },
-      { status: 403 }
-    );
+    // Message needs to actually reflect which tier is being blocked and
+    // why - the old hardcoded "免費方案僅支援每週通知" text was written
+    // back when only weekly/monthly existed and free was the only tier
+    // ever likely to hit this. Now that 'daily' exists and is
+    // business-only, a pro-tier user selecting daily would see that
+    // same free-tier-worded message, which is simply wrong for them.
+    const message =
+      cadence === "daily"
+        ? "每日通知僅限每日方案（Plan C）使用，請升級方案。"
+        : tier === "free"
+          ? "免費方案僅支援每週通知，請升級方案以使用每月或每日通知。"
+          : "此方案不支援所選擇的通知頻率，請升級方案。";
+    return NextResponse.json({ errors: { cadence: message } }, { status: 403 });
   }
 
   const limitCheck = await canCreateSavedSearch(userId);

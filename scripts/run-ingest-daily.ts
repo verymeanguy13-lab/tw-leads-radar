@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { parseAddress } from "../lib/parsing/address";
 import { fetchLiveIndustryCodes } from "../lib/ingestion/fetch-live-industry";
+import { matchAllSearches } from "../lib/matching/engine";
 
 const DISCOVERY_API =
   "https://data.gcis.nat.gov.tw/od/data/api/467E8A3A-72C6-4663-9557-D9D74C597E14";
@@ -386,6 +387,36 @@ async function main() {
     // actually closes historical gaps like the 2026-08-18 to 08-25
     // incident, not just flags new ones.
     await retryRecentGaps(retryStats);
+
+    // 2026-08-30: CRITICAL fix found during a coherence re-check of the
+    // daily-cadence work above. This script previously never called
+    // matchAllSearches() at all — only the MONTHLY bulk ingestion
+    // (scripts/run-ingest.ts) did. That meant every day's newly
+    // discovered companies were inserted into `companies` but never
+    // actually matched against anyone's saved searches until either:
+    // (a) a user manually clicked "Run Now" themselves, or (b) the next
+    // monthly bulk run, up to ~45 days later. This silently undermined
+    // EVERY cadence's core promise, not just the new 'daily' one being
+    // built today — a "weekly" digest customer would only ever see
+    // matches that existed at the time they last manually ran their
+    // search, since nothing was automatically keeping search_matches
+    // current in between. Only queries this project's own database
+    // (matchSearch() has no external API calls), so there is no
+    // GCIS rate-limit concern running this daily, unlike the live
+    // profile/industry fetches above.
+    console.log("Re-matching all saved searches against today's updated companies table...");
+    const matchResult = await matchAllSearches();
+    console.log(
+      `matchAllSearches: ${matchResult.searchesRun} searches run, ` +
+        `${matchResult.searchesSkippedPaused} paused/skipped, ` +
+        `${matchResult.totalNewMatches} new match(es) total, ` +
+        `${matchResult.failures.length} failure(s).`
+    );
+    if (matchResult.failures.length > 0) {
+      for (const f of matchResult.failures) {
+        console.error(`  matchSearch failed for ${f.searchId}: ${f.message}`);
+      }
+    }
   } catch (err) {
     status = "failed";
     errorLog = String(err);

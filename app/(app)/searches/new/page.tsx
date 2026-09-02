@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 const REGIONS = [
   "臺北市", "新北市", "桃園市", "臺中市", "臺南市", "高雄市",
@@ -40,9 +41,24 @@ export default function NewSearchPage() {
   const [capitalMax, setCapitalMax] = useState("");
   const [entityType, setEntityType] = useState<"company" | "business" | "both">("both");
   const [keyword, setKeyword] = useState("");
-  const [cadence, setCadence] = useState<"weekly" | "monthly">("weekly");
+  const [cadence, setCadence] = useState<"weekly" | "monthly" | "daily">("weekly");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [tier, setTier] = useState<"free" | "pro" | "business" | null>(null);
+
+  useEffect(() => {
+    // Best-effort only - if this fails (network blip, not logged in
+    // for some reason), the daily option just stays disabled by
+    // default (tier === null), which is the safe direction to fail in.
+    // The real enforcement is server-side in POST /api/searches
+    // regardless of what this returns.
+    fetch("/api/user/tier")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.tier) setTier(data.tier);
+      })
+      .catch(() => {});
+  }, []);
 
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -194,21 +210,36 @@ export default function NewSearchPage() {
 
       <div>
         <label className="block mb-1 font-medium">通知頻率</label>
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-2">
           {[
             { value: "weekly", label: "每週" },
             { value: "monthly", label: "每月" },
-          ].map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="cadence"
-                checked={cadence === opt.value}
-                onChange={() => setCadence(opt.value as typeof cadence)}
-              />
-              {opt.label}
-            </label>
-          ))}
+            { value: "daily", label: "每日", businessOnly: true },
+          ].map((opt) => {
+            const disabled = opt.businessOnly && tier !== "business";
+            return (
+              <div key={opt.value} className="flex items-center gap-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="cadence"
+                    checked={cadence === opt.value}
+                    disabled={disabled}
+                    onChange={() => setCadence(opt.value as typeof cadence)}
+                  />
+                  {opt.label}
+                </label>
+                {disabled && (
+                  <span className="text-xs text-secondary">
+                    僅限每日方案（Plan C）使用，
+                    <Link href="/pricing" className="underline">
+                      查看方案
+                    </Link>
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

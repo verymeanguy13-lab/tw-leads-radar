@@ -1071,163 +1071,97 @@ action needed.
 function, new in-memory counters); no new columns or tables were
 needed.
 
-## Session 24 (Deploy), item 6 — Privacy Policy & Terms of Service drafted — 2026-08-31
+## Post-Session-23 fixes, continued — 2026-08-30, part 3 (real daily-cadence support; a much bigger hidden gap found while fixing it)
 
-Replaced the placeholder stub text in `app/(marketing)/terms/page.tsx`
-and `app/(marketing)/privacy/page.tsx` with full draft content
-(Traditional Chinese), matching existing page styling conventions
-(`px-8 py-16 max-w-2xl mx-auto` container, `font-semibold text-lg`
-section headers).
+Prompted by the user directly asking whether the blueprint's promised
+features were actually all implemented, using "daily notification" as
+a named example. Investigation confirmed a real, complete, cross-stack
+gap, and then surfaced something more severe underneath it.
 
-**Status: DRAFT, NOT lawyer-reviewed.** Both pages carry a visible
-warning banner at the top saying so. `【　　】` placeholders mark
-every spot needing the user's real legal name (not incorporated as of
-this date). Three specific clauses are individually tagged "⚠️ 待律師確認"
-in the rendered text itself, matching the three items already flagged
-in the Session 24 handoff:
-- Terms §6, 資料來源與免責聲明 (data-source disclaimer) — ties directly
-  to the still-open PDPA purpose-limitation question (see "Important
-  open discussions" in the handoff / prior session history).
-- Terms §8, 責任限制 (liability cap) — drafted at "capped at trailing
-  12 months' subscription fees, indirect damages excluded" as a
-  starting position only.
-- Terms §10, 準據法與管轄法院 (governing law/jurisdiction) — left as an
-  open placeholder pending lawyer input, especially given the
-  unincorporated status.
+**Finding 1 — Plan C's headline feature didn't exist anywhere.** The
+pricing page names Plan C "每日方案" with "每日電子郵件摘要" as its main
+differentiator over Plan B, priced at more than double Plan B's rate.
+But `'daily'` did not exist as a valid cadence value ANYWHERE in the
+stack: not in the `saved_searches.cadence` CHECK constraint, not in
+`lib/tiers.ts`'s `Cadence` type or `TIER_LIMITS` (where `business` had
+*identical* `allowedCadences` to `pro` — the two paid tiers were
+functionally indistinguishable in every gated dimension), not in
+`VALID_CADENCE` in the API route, not in the search-creation form's UI,
+and not in the digest scheduler's due-date logic. Fixed across all of
+those layers — see the code itself for specifics, comments are
+thorough. Also fixed two other stale weekly/monthly-only spots found
+during the sweep (`types/db.ts`, the `/searches` list page's
+`CADENCE_LABEL` map) and a genuine syntax bug in `db/schema.sql`
+unrelated to this fix but discovered while editing it: the file uses
+invalid doubled single-quotes (`''weekly''`) throughout, which is not
+valid executable SQL in this context — not fixed file-wide (out of
+scope for this task), just not perpetuated in the new line added here.
 
-**Added same day, at user's request:** Terms §6 now also explicitly
-disclaims responsibility for service interruption caused by
-third-party infrastructure (GitHub, Neon, Vercel) — ties to the
-already-logged "no uptime/status monitoring exists for
-Vercel/Neon/GitHub Actions" open item.
+**Finding 2 (bigger) — the digest workflow itself only ran once a
+week, so daily cadence would have been undeliverable even with full
+data-layer support.** Fixed by changing `digest.yml`'s cron to run
+daily. This required also fixing `getDueSavedSearches()`, which
+previously treated `'weekly'` as unconditionally "always due" — that
+only produced correct once-a-week behavior as a side effect of the job
+itself running weekly. Once the job runs daily, that same logic would
+have emailed weekly-tier customers every single day. Rewrote it to use
+real day-since-last-sent thresholds for every cadence uniformly
+(`daily: 0.9`, `weekly: 6.5`, `monthly: 28` — set slightly below their
+nominal period to tolerate normal GitHub Actions cron jitter without
+risking a skipped day).
 
-Privacy Policy structured around Taiwan PDPA's standard required
-disclosure format (特定目的、期間、地區、對象、方式) and explicitly
-covers: the two categories of personal data collected (account email;
-company-registry data containing 負責人姓名), the existing
-`/data-removal` feature as the mechanism for a data subject to request
-removal, and the third-party processors already in use (Paddle,
-Resend, Neon, Vercel).
+**Finding 3 (the real severity) — found while re-checking coherence
+before telling the user this was done: `scripts/run-ingest-daily.ts`
+never called `matchAllSearches()` at all.** Only the *monthly* bulk
+ingestion (`scripts/run-ingest.ts`) did. This means every company the
+daily live-discovery pipeline found was inserted into `companies` but
+never automatically matched against any saved search's filters —
+`search_matches` only ever got new rows from (a) a user manually
+clicking "Run Now," or (b) the next monthly bulk run, up to ~45 days
+later. This silently undermined the core promise of EVERY cadence, not
+just the new daily one — a "weekly" digest customer was only ever
+getting matches that existed at whatever point they'd last manually
+re-run their own search, not anything approaching real automatic
+weekly freshness. Fixed by adding a `matchAllSearches()` call at the
+end of `run-ingest-daily.ts`'s `main()`, after ingestion and the
+self-healing retry step. Safe to run daily with no rate-limit
+concern — `matchSearch()` only queries this project's own database, it
+makes no external GCIS API calls at all, unlike the profile/industry
+fetches earlier in the same script.
 
-**Verified:** JSX tag balance checked programmatically (no mismatched
-open/close tags); user ran `npx tsc --noEmit` locally after deploying
-— clean, no errors.
+**Status: all three findings fixed and type-checked. NOT YET deployed
+or verified live** — this session ended with the user about to apply
+and test the patch. A future session should confirm: (1) the migration
+ran cleanly, (2) a business-tier test account can select and receive a
+genuinely daily digest, (3) a lower-tier account still only gets
+weekly/monthly as before (not suddenly daily), and — most
+importantly — that newly-discovered companies from the daily pipeline
+now actually show up as fresh matches without anyone manually clicking
+Run Now.
 
-**Next step still open:** get both drafts in front of a real lawyer,
-then come back and replace the `【　　】` placeholders and warning
-banners with final approved text before removing the "draft" status.
+**No schema changes beyond the CHECK constraint update** (migration:
+`scripts/migrate-add-daily-cadence.ts`, idempotent, looks up the real
+constraint name via `pg_constraint` rather than assuming it).
 
-## Pre-Paddle-live site audit + fixes — 2026-08-31
+**Finding 4 — found during a SECOND coherence recheck, requested again
+by the user before applying anything: a real race condition between
+the two daily workflows.** `digest.yml` had been changed to run at
+`0 22 * * *` — the exact same time as `ingest-daily.yml`. GitHub
+Actions gives no ordering guarantee between two independently-triggered
+workflows scheduled at the same time, so `digest.yml` could easily have
+finished and sent emails *before* `ingest-daily.yml`'s new
+`matchAllSearches()` call (Finding 3) had updated that day's matches -
+silently defeating the entire point of today's work on the first day it
+ran. Fixed by moving `digest.yml` to `0 23 * * *` (1 hour after
+`ingest-daily.yml` starts), with cross-reference comments in both files
+so a future schedule change to one doesn't quietly break the other.
 
-Full site/repo review requested before starting Paddle's live-mode
-verification, since Paddle's own domain/business review will look at
-the live site. Findings and fixes, in the order addressed:
-
-**#1 — Checkout buttons silently opened a broken sandbox checkout.**
-`components/CheckoutButton.tsx` switches Paddle to sandbox mode
-whenever `NEXT_PUBLIC_PADDLE_ENV=sandbox`, but had no user-facing
-indication of this — a real visitor clicking "開始使用" on plan B/C
-would hit a test-mode checkout that can't take real payment, with no
-explanation. **Fix:** added a `paddleSandbox` check; while sandbox is
-active, both buttons render disabled with "即將開放，敬請期待"
-instead of opening checkout. Reverts to normal automatically the
-moment `NEXT_PUBLIC_PADDLE_ENV` changes to live — no second code
-change needed then. Covers both `/pricing` and `/account` since they
-share this one component.
-
-**#2 — Draft ToS/Privacy pages were publicly live.** The full drafts
-written earlier the same day (with the "⚠️ 草稿" banner and `【 】`
-placeholders — see previous log entry) were live on
-`taiwanleads.com/terms` and `/privacy`, visible to any visitor
-including Paddle's reviewers during domain/business verification.
-**Fix:** reverted both public pages to the original short placeholder
-("本頁面尚待完成。正式法律文件將另行撰寫與發佈。"). The actual
-lawyer-ready drafts still exist, just not deployed publicly until
-approved.
-
-**#3 — No logout control anywhere in the app.** Repo-wide search for
-`signOut`/`登出`/`logout` returned zero matches before this fix.
-
-**#4 — No shared navigation in the authenticated app area.**
-`app/(app)/` (`/searches`, `/searches/new`, `/searches/[id]`,
-`/account`, `/admin/*`) had no `layout.tsx` and no shared header —
-concretely, no way back to `/searches` from `/account` or from a
-search's results page, no logo/home link, nothing.
-
-**Fix for #3+#4 together:** new `components/AppNav.tsx` (client
-component — logo/home link to `/searches`, links to `已儲存搜尋` and
-`帳戶`, and a working 登出 button calling `signOut()` from
-`next-auth/react`, which works without a `<SessionProvider>` the same
-way `signIn()` already did in the signup form) and new
-`app/(app)/layout.tsx` wrapping all pages in that route group with it.
-
-**No schema.sql changes** — all four fixes are UI/application-logic
-only; no new tables or columns.
-
-**Verified:** JSX/tag balance checked programmatically on every
-changed/new file; user ran `npx tsc --noEmit` locally after deploying
-— clean, no errors both times.
-
-**Remaining from the same audit, not yet addressed (lower priority,
-not blocking Paddle):** marketing nav doesn't show a
-logged-in-specific state (always shows "登入" even to an authenticated
-user); every page shares identical `<title>`/meta-description instead
-of per-page values; no `robots.txt` or sitemap; unused default Next.js
-starter SVGs still in `/public`; no custom 404 page; no `.env.example`.
-
-## Pre-Paddle-live site audit, part 2 — remaining polish items #5-10 — 2026-08-31
-
-Closed out the rest of the same-day audit (part 1 above covered
-#1-4). None of these were blocking, but done before starting Paddle
-live verification since Paddle's own review looks at the live site.
-
-**#5 — Marketing nav didn't reflect logged-in state.**
-`app/(marketing)/layout.tsx` was a plain component with no session
-check, so it always showed "登入" even to an already-authenticated
-user browsing `/` or `/pricing`. **Fix:** made it `async`, calls
-`getServerSession(authOptions)`, and swaps the button to "已儲存搜尋"
-(linking to `/searches`) when logged in.
-
-**#6 — Every page shared one identical `<title>`/meta-description.**
-Root `app/layout.tsx`'s `metadata` applied everywhere with no
-per-page override. **Fix:** switched root metadata to a `title.template`
-(`"%s ｜ 新公司快報"`) and added a page-specific `title` to each
-route: home ("搶先掌握新成立公司"), `/pricing` ("定價"), `/terms`
-("服務條款"), `/privacy` ("隱私權政策"). `/signup`, `/login`, and
-`/data-removal` are client components (can't export `metadata`
-directly), so each got a small sibling `layout.tsx` that exports the
-title and passes `children` straight through.
-
-**#7 — No `robots.txt` or sitemap.** Added `app/robots.ts` (allows
-everything except `/searches`, `/account`, `/admin`; points to the
-sitemap) and `app/sitemap.ts` (lists the public marketing routes only
-— `/`, `/pricing`, `/signup`, `/login`, `/terms`, `/privacy`,
-`/data-removal`). Both are Next.js's built-in special files, so no new
-dependency.
-
-**#8 — Unused default Next.js starter SVGs in `/public`.** Confirmed
-via repo-wide grep that `file.svg`, `globe.svg`, `next.svg`,
-`vercel.svg`, `window.svg` were referenced nowhere. Deleted all five.
-
-**#9 — No custom 404.** Added `app/not-found.tsx`, styled to match the
-rest of the site (same `--accent`/`text-secondary` conventions) instead
-of falling back to Next.js's generic default page.
-
-**#10 — No `.env.example`.** Generated one from an actual repo-wide
-`grep` of every `process.env.*` reference (not from memory/guessing),
-with a one-line comment on what each variable is for. Includes a note
-on `NEXT_PUBLIC_PADDLE_ENV` explaining the sandbox-guard behavior added
-in part 1 (#1) above, and on `ROC_DATE` being a test-only override for
-`scripts/run-ingest-daily.ts`.
-
-**No schema.sql changes** — all six of these are static
-config/routing/metadata only.
-
-**Verified:** tag balance checked programmatically on every
-new/changed `.tsx` file; user ran `npx tsc --noEmit` locally after
-deploying — clean, no errors.
-
-**This closes out the full pre-Paddle-live site audit (#1-10).**
-Next step: start Paddle's live-mode account/domain/identity
-verification (Session 24, item 3, previously deferred).
+Also found in the same pass: `ingest-daily.yml`'s existing
+`timeout-minutes: 10` no longer had adequate headroom once
+`retryRecentGaps()` (up to 100 extra live API calls) and
+`matchAllSearches()` were added to the end of its run - a slow day
+could now plausibly approach or exceed 10 minutes, and a timeout kills
+the process mid-execution rather than letting it exit gracefully (the
+final `INSERT INTO ingestion_runs` never runs in that case). Raised to
+20 minutes.
 

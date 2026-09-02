@@ -1,8 +1,21 @@
-name: Weekly Digest
+name: Digest
 
 on:
   schedule:
-    - cron: "0 22 * * 0"
+    # 2026-08-30: was weekly-only (0 22 * * 0), then briefly changed to
+    # "0 22 * * *" (same time as ingest-daily.yml) to run daily -
+    # WRONG, caught during a coherence recheck: ingest-daily.yml now
+    # ends with a matchAllSearches() call (see that workflow's own
+    # comment), and GitHub Actions gives no ordering guarantee between
+    # two separately-triggered workflows scheduled at the same time.
+    # If this ran and finished before that matchAllSearches() call
+    # completed, digest emails would go out reporting yesterday's
+    # matches, not today's - defeating the entire point of adding daily
+    # cadence in the first place. Offset by 1 hour to guarantee
+    # ingest-daily.yml (which typically completes in a few minutes, but
+    # could run longer on a day with a large retry backlog) has finished
+    # well before this fires.
+    - cron: "0 23 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -32,4 +45,4 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
         run: |
-          curl -X POST "https://api.resend.com/emails" -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -d "{\"from\":\"$EMAIL_FROM\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"tw-leads-radar digest FAILED\",\"html\":\"<p>The weekly digest run failed. Check the Actions log for details.</p>\"}"
+          curl -X POST "https://api.resend.com/emails" -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -d "{\"from\":\"$EMAIL_FROM\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"tw-leads-radar digest FAILED\",\"html\":\"<p>The digest run failed (runs daily now, covering weekly/monthly/daily cadences). Check the Actions log for details.</p>\"}"

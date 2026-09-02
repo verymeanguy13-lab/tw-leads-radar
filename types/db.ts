@@ -46,7 +46,7 @@ export interface SavedSearch {
   capital_max: number | null;
   entity_type: "company" | "business" | "both";
   keyword: string | null;
-  cadence: "weekly" | "monthly";
+  cadence: "weekly" | "monthly" | "daily";
   paused: boolean;
   created_at: string;
   updated_at: string;

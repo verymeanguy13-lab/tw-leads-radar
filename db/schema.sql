@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     capital_max NUMERIC,
     entity_type VARCHAR(20) CHECK (entity_type IN (''company'', ''business'', ''both'')) DEFAULT ''both'',
     keyword TEXT,
-    cadence VARCHAR(20) NOT NULL CHECK (cadence IN (''weekly'', ''monthly'')) DEFAULT ''weekly'',
+    cadence VARCHAR(20) NOT NULL CHECK (cadence IN ('weekly', 'monthly', 'daily')) DEFAULT 'weekly',
     paused BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

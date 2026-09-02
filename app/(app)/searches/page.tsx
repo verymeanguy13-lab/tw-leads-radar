@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 const CADENCE_LABEL: Record<string, string> = {
   weekly: "每週",
   monthly: "每月",
+  daily: "每日",
 };
 
 // This page did not exist before - /searches (the login redirect target,

@@ -13,12 +13,27 @@ const STATUS_LABEL: Record<string, string> = {
   suspended: "停業中",
 };
 
-// Monthly searches only get re-checked by this weekly-run script, so
-// "due" has to be derived rather than read off a column - there is no
-// last_sent_at on saved_searches. Weekly cadence is trivially due every
-// run (the cron itself is weekly). Monthly is due once its last send is
-// null or at least 28 days old.
-const MONTHLY_DUE_AFTER_DAYS = 28;
+// "Due" is derived rather than read off a column - there is no
+// last_sent_at on saved_searches, it's computed per search from
+// search_matches.surfaced_at (see the query below). See the 2026-08-30
+// comment further down for why every cadence now uses a real
+// day-since-last-sent threshold, not just monthly.
+//
+// Thresholds are set slightly BELOW their nominal period (0.9 days for
+// "daily" instead of exactly 1.0, 6.5 instead of exactly 7 for
+// "weekly") to tolerate normal GitHub Actions cron jitter - scheduled
+// runs aren't guaranteed to fire at the exact second every day, and a
+// strict >= 1.0 threshold could occasionally compute a gap of e.g.
+// 0.998 days on a slightly-early run and wrongly skip that day's send
+// entirely. The buffer is small enough that it still can't cause two
+// sends within the same real day if the workflow were somehow
+// triggered twice (scheduled + a manual workflow_dispatch), since
+// that gap would be a small fraction of a day, nowhere near 0.9.
+const CADENCE_DUE_AFTER_DAYS: Record<string, number> = {
+  daily: 0.9,
+  weekly: 6.5,
+  monthly: 28,
+};
 
 export interface DueSearch {
   id: string;
@@ -66,17 +81,23 @@ export async function getDueSavedSearches(): Promise<DueSearch[]> {
     user_email: string;
     last_sent_at: string | null;
   }[]) {
-    if (r.cadence === "weekly") {
-      due.push({
-        id: r.id,
-        name: r.name,
-        cadence: r.cadence,
-        userId: r.user_id,
-        userEmail: r.user_email,
-      });
+    // 2026-08-30: rewritten to use real day-since-last-sent thresholds
+    // for EVERY cadence, not just monthly. Previously 'weekly' was
+    // unconditionally "always due" - this only produced correct
+    // once-a-week behavior because digest.yml's cron itself only ran
+    // once a week. Now that digest.yml runs daily (needed for 'daily'
+    // cadence to be deliverable at all - see the workflow's own
+    // comment), an unconditional "always due" for weekly would have
+    // sent weekly-tier customers a digest every single day instead of
+    // once a week. This function is now cadence-frequency-agnostic:
+    // adding a new cadence in the future just means adding one entry
+    // to CADENCE_DUE_AFTER_DAYS, no branching logic to duplicate.
+    const dueAfterDays = CADENCE_DUE_AFTER_DAYS[r.cadence];
+    if (dueAfterDays === undefined) {
+      console.error(`Unknown cadence "${r.cadence}" on saved_search ${r.id} - skipping.`);
       continue;
     }
-    // monthly
+
     if (!r.last_sent_at) {
       due.push({
         id: r.id,
@@ -87,9 +108,10 @@ export async function getDueSavedSearches(): Promise<DueSearch[]> {
       });
       continue;
     }
+
     const daysSinceLastSent =
       (Date.now() - new Date(r.last_sent_at).getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceLastSent >= MONTHLY_DUE_AFTER_DAYS) {
+    if (daysSinceLastSent >= dueAfterDays) {
       due.push({
         id: r.id,
         name: r.name,
@@ -254,8 +276,9 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   // count and the surfaced_in_digest UPDATE both still use the full
   // arrays) - only the rendered HTML is capped. Truncating the arrays
   // themselves would have caused the overflow rows to never get marked
-  // surfaced, meaning they'd count as "new" again next week, forever,
-  // and the same-sized email would just fail the same way again.
+  // surfaced, meaning they'd count as "new" again the next time this
+  // search's digest runs, forever, and the same-sized email would just
+  // fail the same way again.
   const MAX_RENDERED_ROWS_PER_SECTION = 50;
   const newRowsToRender = newRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);
   const changedRowsToRender = changedRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);

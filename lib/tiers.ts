@@ -1,7 +1,7 @@
 import { db } from "./db";
 
 export type Tier = "free" | "pro" | "business";
-export type Cadence = "weekly" | "monthly";
+export type Cadence = "weekly" | "monthly" | "daily";
 
 interface TierLimits {
   maxSavedSearches: number | null; // null = unlimited
@@ -9,10 +9,23 @@ interface TierLimits {
   csvExport: boolean;
 }
 
+// 2026-08-30: found that `business` (Plan C, marketed on the pricing
+// page as "每日方案" with "每日電子郵件摘要" as its headline feature
+// over Plan B) had IDENTICAL allowedCadences to `pro` — no "daily"
+// cadence existed anywhere in the stack at all (not in this file, not
+// in the DB CHECK constraint, not in the API's VALID_CADENCE, not in
+// the search-creation form, not in the digest scheduler's due-date
+// logic, and the workflow that actually sends digest emails was
+// hardcoded to a weekly-only cron). The two paid tiers were completely
+// functionally identical prior to this fix — someone paying for Plan C
+// specifically for daily notifications was getting exactly what Plan B
+// customers get, with no error or indication anywhere. See
+// architecture.md's 2026-08-30 entry for the full fix across every
+// layer this touched.
 export const TIER_LIMITS: Record<Tier, TierLimits> = {
   free: { maxSavedSearches: 1, allowedCadences: ["weekly"], csvExport: false },
   pro: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly"], csvExport: true },
-  business: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly"], csvExport: true },
+  business: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly", "daily"], csvExport: true },
 };
 
 /**

@@ -9,6 +9,12 @@ name: Daily Company Ingestion
 # Cron is in UTC. 22:00 UTC = 06:00 Taipei time (UTC+8) the next day —
 # gives GCIS's own systems overnight to finish processing the prior
 # day's approvals before we ask for them.
+#
+# 2026-08-30: digest.yml now runs at 23:00 UTC (1 hour after this job
+# starts) specifically so it never reads search_matches before this
+# job's new matchAllSearches() call (added the same day) has finished
+# updating them - see digest.yml's own schedule comment. If this job's
+# start time ever changes, digest.yml's needs to move with it.
 on:
   schedule:
     - cron: "0 22 * * *"
@@ -17,7 +23,18 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 2026-08-30: raised from 10 to 20 minutes after adding
+    # retryRecentGaps() (up to 100 more live API calls) and
+    # matchAllSearches() to the end of this run. A hard timeout kills
+    # the process mid-execution rather than letting it exit gracefully -
+    # the final `INSERT INTO ingestion_runs` never runs in that case, so
+    # that day wouldn't even get a 'failed' status logged (though
+    # GitHub's own failure detection still fires the Resend alert step
+    # regardless). 20 minutes gives comfortable headroom above the
+    # worst realistic case (existing runs typically finish in 1-4
+    # minutes per Actions history; the new work adds at most a few more
+    # minutes even on a bad day) without allowing runaway execution.
+    timeout-minutes: 20
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
