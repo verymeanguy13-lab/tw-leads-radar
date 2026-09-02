@@ -813,11 +813,15 @@ picture.
 - RESOLVED 2026-08-27: the freshness-tier enforcement logic is now
   built — see the post-Session-23 entry below for the full story
   (it took three attempts to get right).
-- `middleware.ts` uses Next.js's deprecated "middleware" convention
-  (Next 16 wants "proxy" instead). Still works, just deprecated — low
-  priority, but it's the file guarding `/searches`, `/account`,
-  `/admin`, so don't let it linger indefinitely. Codemod available:
-  `npx @next/codemod@canary middleware-to-proxy .`
+- RESOLVED 2026-08-30: `middleware.ts` renamed to `proxy.ts`, migrated
+  to Next.js 16's "proxy" convention via `npx @next/codemod@canary
+  middleware-to-proxy .`. Verified before applying, not just trusted
+  blind: ran the codemod against a sandboxed copy first, confirmed the
+  only actual change was the exported function name (`middleware` →
+  `proxy` — everything else, including the `config` matcher export, was
+  untouched), confirmed nothing else in the codebase referenced the old
+  filename by path, and confirmed a clean project-wide type-check
+  afterward.
 - Unverified signups (email/password) never expire or get cleaned up —
   see the custom feature entry above.
 - 統一編號/VAT ID capture at checkout (B2B reverse-charge VAT, per

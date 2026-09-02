@@ -39,7 +39,7 @@ const authMiddleware = withAuth({
   pages: { signIn: "/login" },
 });
 
-export default function middleware(req: NextRequest, event: NextFetchEvent) {
+export default function proxy(req: NextRequest, event: NextFetchEvent) {
   const { pathname } = req.nextUrl;
 
   if (process.env.MAINTENANCE_MODE === "true") {
