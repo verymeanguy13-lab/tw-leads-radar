@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     paddle_customer_id TEXT,
     paddle_subscription_id TEXT UNIQUE,
-    tier VARCHAR(20) NOT NULL CHECK (tier IN (''free'', ''pro'', ''business'')) DEFAULT ''free'',
-    status VARCHAR(20) NOT NULL CHECK (status IN (''active'', ''past_due'', ''canceled'', ''none'')) DEFAULT ''none'',
+    tier VARCHAR(20) NOT NULL CHECK (tier IN ('free', 'pro', 'business')) DEFAULT 'free',
+    status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'none')) DEFAULT 'none',
     current_period_end TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -29,16 +29,16 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
 
 CREATE TABLE IF NOT EXISTS companies (
     uniform_id VARCHAR(8) PRIMARY KEY,
-    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN (''company'', ''business'')),
+    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('company', 'business')),
     name TEXT NOT NULL,
-    industry_codes TEXT[] DEFAULT ''{}'',
+    industry_codes TEXT[] DEFAULT '{}',
     capital NUMERIC,
     address_raw TEXT,
     address_region TEXT,
     address_district TEXT,
     responsible_person TEXT,
     registration_date DATE,
-    status VARCHAR(20) NOT NULL CHECK (status IN (''active'', ''changed'', ''dissolved'', ''suspended'')) DEFAULT ''active'',
+    status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'changed', 'dissolved', 'suspended')) DEFAULT 'active',
     status_updated_at TIMESTAMPTZ,
     source_dataset TEXT,
     source_month TEXT,
@@ -85,11 +85,11 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    industry_codes TEXT[] DEFAULT ''{}'',
-    regions TEXT[] DEFAULT ''{}'',
+    industry_codes TEXT[] DEFAULT '{}',
+    regions TEXT[] DEFAULT '{}',
     capital_min NUMERIC,
     capital_max NUMERIC,
-    entity_type VARCHAR(20) CHECK (entity_type IN (''company'', ''business'', ''both'')) DEFAULT ''both'',
+    entity_type VARCHAR(20) CHECK (entity_type IN ('company', 'business', 'both')) DEFAULT 'both',
     keyword TEXT,
     cadence VARCHAR(20) NOT NULL CHECK (cadence IN ('weekly', 'monthly', 'daily')) DEFAULT 'weekly',
     paused BOOLEAN NOT NULL DEFAULT FALSE,
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     updated_count INTEGER,
     parse_failures INTEGER DEFAULT 0,
     encoding_detected TEXT,
-    status VARCHAR(20) NOT NULL CHECK (status IN (''running'', ''success'', ''failed'', ''partial'', ''no_new_data'')) DEFAULT ''running'',
+    status VARCHAR(20) NOT NULL CHECK (status IN ('running', 'success', 'failed', 'partial', 'no_new_data')) DEFAULT 'running',
     error_log TEXT,
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ
@@ -140,19 +140,19 @@ ALTER TABLE saved_searches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE search_matches ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY users_isolation ON users
-    USING (id = current_setting(''app.current_user_id'', true)::UUID);
+    USING (id = current_setting('app.current_user_id', true)::UUID);
 
 CREATE POLICY subscriptions_isolation ON subscriptions
-    USING (user_id = current_setting(''app.current_user_id'', true)::UUID);
+    USING (user_id = current_setting('app.current_user_id', true)::UUID);
 
 CREATE POLICY saved_searches_isolation ON saved_searches
-    USING (user_id = current_setting(''app.current_user_id'', true)::UUID);
+    USING (user_id = current_setting('app.current_user_id', true)::UUID);
 
 CREATE POLICY search_matches_isolation ON search_matches
     USING (
         saved_search_id IN (
             SELECT id FROM saved_searches
-            WHERE user_id = current_setting(''app.current_user_id'', true)::UUID
+            WHERE user_id = current_setting('app.current_user_id', true)::UUID
         )
     );
 

@@ -1164,3 +1164,27 @@ the process mid-execution rather than letting it exit gracefully (the
 final `INSERT INTO ingestion_runs` never runs in that case). Raised to
 20 minutes.
 
+## Post-Session-23 fixes, continued — 2026-08-30, part 5 (schema.sql was not valid SQL)
+
+RESOLVED: `db/schema.sql` had invalid doubled single-quotes
+(`''weekly''` instead of `'weekly'`) throughout the entire file — 66
+occurrences, first noticed in part 3 above but only fixed on the one
+line being edited at the time. This was not valid, directly-executable
+SQL in this context; running it via `psql -f` would have failed
+immediately on the first CHECK constraint it hit.
+
+Fixed with a global find-replace (confirmed no ambiguous 3+ consecutive
+quote sequences existed anywhere first, so the replace was
+unambiguous). Verified properly, not just visually: installed Postgres
+16 locally, created a scratch database, and ran the actual file
+end-to-end via `psql -f db/schema.sql` — every statement succeeded
+(every `CREATE TABLE`, `CREATE INDEX`, `CREATE ROLE`, `ALTER TABLE`,
+`CREATE POLICY`, `GRANT`), and `\dt` confirmed all 7 expected tables
+were created correctly, including `data_removal_requests`. This is
+strong evidence the file has been broken like this for a long time —
+long enough to predate this session entirely — without anyone
+noticing, presumably because the live database was built up
+incrementally through individual migration scripts (which all use
+correct syntax) rather than by ever actually executing this file
+directly.
+
