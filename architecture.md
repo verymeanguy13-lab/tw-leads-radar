@@ -1215,3 +1215,89 @@ incrementally through individual migration scripts (which all use
 correct syntax) rather than by ever actually executing this file
 directly.
 
+## Background-job reliability: 504 retry-with-backoff and a digest watchdog — 2026-09-03
+
+Two carried-over reliability items, addressed together at the user's
+request.
+
+**Discovery/Profile API retry-with-backoff.** `scripts/run-ingest-daily.ts`'s
+`fetchDiscoveryPage()` and `fetchProfile()` previously threw immediately
+on any non-OK HTTP response, including transient GCIS 502/503/504
+gateway errors. Worse than it looked: `fetchAllForDate()` (which calls
+`fetchDiscoveryPage()`) is called OUTSIDE `ingestDate()`'s per-row
+try/catch, and `main()`'s `for (const rocDate of dates)` loop had no
+per-date recovery either — so a single transient 504 on the FIRST date
+processed (`yesterdayRocDate()`) killed the entire run: the second date
+was never attempted, and neither were `retryRecentGaps()` or
+`matchAllSearches()`, since both sit after the loop in the same try
+block. Since `main()` only ever looks at "yesterday" and "today", a
+failure on yesterday's date was never revisited by any future run —
+that date's newly-registered companies would be silently, permanently
+missed, not just delayed a day as the "self-healing" framing implied.
+
+Fixed two ways:
+1. Added `fetchWithRetry()` — retries up to 4 attempts with exponential
+   backoff (2s/4s/8s) on 429 and any 5xx status, or a network-level
+   failure (timeout, DNS, connection reset). Non-retryable 4xx statuses
+   still fail immediately. Both `fetchDiscoveryPage()` and
+   `fetchProfile()` now go through this.
+2. Added a per-date try/catch inside `main()`'s loop, so if a date's
+   `ingestDate()` call still fails after all retries are exhausted, the
+   OTHER date is still attempted, and `retryRecentGaps()` +
+   `matchAllSearches()` still run afterward. `status`/`errorLog` are set
+   the same way the existing degraded-rate check already did, and that
+   check was changed to append to `errorLog` rather than overwrite it,
+   so both a per-date failure and a degraded rate in the same run are
+   both preserved in the logged row instead of the second clobbering the
+   first.
+
+No new "used to fail silently, still does" gap intentionally left open
+here — `fetchLiveIndustryCodes()` (a separate file,
+`lib/ingestion/fetch-live-industry.ts`) was NOT touched. Its failures
+already degrade gracefully to `null` → empty `industry_codes` array
+rather than throwing, and are already caught by the existing
+`industryCodeAttempts`/`industryCodeSuccesses` degraded-rate detection —
+a different, already-adequate safety net for a different failure shape.
+
+**Digest watchdog (the "did it actually run" detector).** Session 25
+found `digest.yml` silently didn't run for 2 real days (2026-09-01 to
+09-02) with nothing anywhere flagging it. `digest.yml` already had an
+`if: failure()` alert step, but that can only fire when the workflow
+actually runs and then fails — it has no way to catch GitHub Actions
+simply never triggering the scheduled run at all, since no run object
+ever exists for that step to attach to in that case.
+
+Fixed with an independent, separately-scheduled check rather than
+anything inside `digest.yml` itself (an internal check has the same
+"never runs" blind spot as the alert step does):
+
+- New table `digest_runs` (migration: `scripts/migrate-add-digest-runs.ts`,
+  idempotent, same pattern as `migrate-add-daily-cadence.ts`) — mirrors
+  `ingestion_runs`. `scripts/run-digest.ts` was restructured to wrap its
+  existing logic in a try/catch and insert one row here on every actual
+  execution (success, partial, or a caught crash), inside its own nested
+  try/catch so a logging failure can never mask or crash out of the real
+  run result.
+- New script `scripts/check-digest-ran.ts` queries `digest_runs` for any
+  row in the last 8 hours. If one exists, exits cleanly. If not, it sends
+  its own alert email (reusing the existing Resend/`EMAIL_FROM`/
+  `ALERT_EMAIL` setup, same as `send-refresh-alert.ts`) explaining that
+  the scheduled workflow itself appears to not have fired, then exits 1
+  so the Actions run also shows red as a second signal.
+- New workflow `.github/workflows/digest-watchdog.yml`, scheduled
+  `0 2 * * *` UTC — a few hours after `digest.yml`'s own 23:00 UTC start,
+  comfortable buffer past when both `ingest-daily.yml` and `digest.yml`
+  normally finish (minutes, not hours) without being so tight it could
+  false-alarm on a slow day. Runs completely independently of
+  `digest.yml`'s own trigger, which is the entire point.
+
+Deployed and type-checked, but — consistent with this project's
+verification discipline — **NOT YET confirmed with a real fired
+watchdog run** as of this entry. A future session (or the user, via
+"Run workflow" on the Actions tab) should manually trigger
+`digest-watchdog.yml` once via `workflow_dispatch` to confirm the OK
+path (a recent `digest_runs` row exists → clean exit, no email), and
+ideally also temporarily verify the alert path works (e.g. by checking
+`digest_runs` is truly empty in a moment where no real send has fired
+in 8+ hours) before fully trusting it as a silent-failure safety net.
+

@@ -69,13 +69,66 @@ function rocDateToYearMonthLabel(roc: string): string {
   return `${rocYear + 1911}\u5e74${mm}\u6708`;
 }
 
+// 2026-09-03: retry-with-backoff for transient GCIS API failures
+// (502/503/504 gateway errors, 429 rate-limiting, and network-level
+// failures like fetch timeouts or connection resets). Added after realizing a single
+// Discovery API 504 for one date threw straight out of fetchAllForDate()
+// uncaught — which killed ingestDate() for BOTH dates in that run, since
+// the for-of loop over `dates` in main() had no per-date recovery either
+// (see that change further down). Since main() only ever looks at
+// "yesterday" and "today", a failure on yesterday's date was never
+// revisited by any later run — that date's newly-registered companies
+// would be permanently missed, not just delayed. Retrying a handful of
+// times with exponential backoff turns most single-day GCIS hiccups into
+// a same-run recovery instead of a silent, permanent gap.
+const MAX_FETCH_RETRIES = 4;
+const RETRY_BASE_DELAY_MS = 2000; // 2s, 4s, 8s (only 3 delays between 4 attempts)
+
+function isRetryableStatus(status: number): boolean {
+  // 429 (rate limited) and 5xx (server/gateway errors, including the 504s
+  // this was built for) are worth retrying — they're typically transient.
+  // Other 4xx codes usually mean the request itself is malformed in some
+  // way that retrying won't fix, so those still fail immediately.
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+async function fetchWithRetry(url: string, context: string): Promise<string> {
+  let lastErrorMessage = "unknown error";
+  for (let attempt = 1; attempt <= MAX_FETCH_RETRIES; attempt++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      // Network-level failure (timeout, DNS, connection reset, etc.) —
+      // always worth retrying.
+      lastErrorMessage = err instanceof Error ? err.message : String(err);
+    }
+
+    if (res) {
+      if (res.ok) {
+        return await res.text();
+      }
+      if (!isRetryableStatus(res.status)) {
+        // Not transient — retrying won't help, fail immediately.
+        throw new Error(`${context}: HTTP ${res.status} (not retryable)`);
+      }
+      lastErrorMessage = `HTTP ${res.status}`;
+    }
+
+    if (attempt < MAX_FETCH_RETRIES) {
+      const delay = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+      console.warn(
+        `${context}: attempt ${attempt}/${MAX_FETCH_RETRIES} failed (${lastErrorMessage}), retrying in ${delay}ms...`
+      );
+      await sleep(delay);
+    }
+  }
+  throw new Error(`${context}: failed after ${MAX_FETCH_RETRIES} attempts (${lastErrorMessage})`);
+}
+
 async function fetchDiscoveryPage(rocDate: string, skip: number): Promise<DiscoveryRow[]> {
   const url = `${DISCOVERY_API}?$format=json&$filter=Company_Setup_Date%20eq%20${rocDate}&$skip=${skip}&$top=${PAGE_SIZE}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Discovery API ${res.status} for ${rocDate} skip=${skip}`);
-  }
-  const text = await res.text();
+  const text = await fetchWithRetry(url, `Discovery API for ${rocDate} skip=${skip}`);
   if (!text) return [];
   return JSON.parse(text) as DiscoveryRow[];
 }
@@ -95,11 +148,7 @@ async function fetchAllForDate(rocDate: string): Promise<DiscoveryRow[]> {
 
 async function fetchProfile(uniformId: string): Promise<ProfileRow | null> {
   const url = `${PROFILE_API}?$format=json&$filter=Business_Accounting_NO%20eq%20${uniformId}&$skip=0&$top=1`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Profile API ${res.status} for ${uniformId}`);
-  }
-  const text = await res.text();
+  const text = await fetchWithRetry(url, `Profile API for ${uniformId}`);
   if (!text) return null;
   const rows = JSON.parse(text) as ProfileRow[];
   return rows[0] ?? null;
@@ -358,10 +407,24 @@ async function main() {
   let errorLog: string | null = null;
 
   try {
+    // 2026-09-03: each date now gets its own try/catch. Previously, if
+    // fetchAllForDate() for the FIRST date (e.g. "yesterday") ran out of
+    // fetchWithRetry attempts and threw, the whole for-of loop stopped —
+    // the second date ("today") was never even attempted, and neither was
+    // retryRecentGaps() or matchAllSearches() below, since those sit
+    // after this loop in the same try block. One bad date no longer takes
+    // the other date, or the rest of the run, down with it.
     for (const rocDate of dates) {
-      await ingestDate(rocDate, runStats);
+      try {
+        await ingestDate(rocDate, runStats);
+      } catch (err) {
+        status = "failed";
+        const dateErrorMsg = `ingestDate(${rocDate}) failed: ${String(err)}`;
+        errorLog = errorLog ? `${errorLog}\n${dateErrorMsg}` : dateErrorMsg;
+        console.error(dateErrorMsg);
+      }
     }
-    if (runStats.parseFailures > 0) status = "partial";
+    if (runStats.parseFailures > 0 && status !== "failed") status = "partial";
 
     const industryRate =
       runStats.industryCodeAttempts > 0
@@ -372,7 +435,12 @@ async function main() {
 
     if (industryRate < DEGRADED_THRESHOLD || regionRate < DEGRADED_THRESHOLD) {
       status = "failed";
-      errorLog =
+      // 2026-09-03: append rather than overwrite — a per-date failure
+      // above (fetchWithRetry exhausted) and a degraded rate here can
+      // both be true in the same run, and both are worth keeping in the
+      // logged error_log rather than the second one silently discarding
+      // the first.
+      const degradedMsg =
         `Degraded run: industry_codes success rate ${(industryRate * 100).toFixed(0)}% ` +
         `(${runStats.industryCodeSuccesses}/${runStats.industryCodeAttempts}), ` +
         `address_region success rate ${(regionRate * 100).toFixed(0)}% ` +
@@ -380,7 +448,8 @@ async function main() {
         `Companies were still discovered and stored, just missing these fields — ` +
         `they will be automatically retried by retryRecentGaps() on subsequent runs ` +
         `for up to 14 days without any manual action needed.`;
-      console.error(errorLog);
+      errorLog = errorLog ? `${errorLog}\n${degradedMsg}` : degradedMsg;
+      console.error(degradedMsg);
     }
 
     // Runs regardless of today's degraded status — this is what

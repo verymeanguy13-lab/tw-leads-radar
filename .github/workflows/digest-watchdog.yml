@@ -1,0 +1,48 @@
+﻿name: Digest Watchdog
+
+# 2026-09-03: catches the ONE failure mode digest.yml's own `if: failure()`
+# alert step can never catch — GitHub Actions silently not triggering the
+# scheduled workflow at all. This happened for real, 2026-09-01 to 09-02,
+# with nothing anywhere flagging it. digest.yml can only alert when it
+# actually runs and then fails; this workflow runs independently on its
+# own separate schedule and checks the database (digest_runs, written by
+# scripts/run-digest.ts on every actual execution) for proof a digest run
+# genuinely happened recently. If nothing shows up, THAT is the alert.
+#
+# Cron is in UTC. 02:00 UTC is a few hours after digest.yml's own 23:00 UTC
+# start (which itself runs 1 hour after ingest-daily.yml's 22:00 UTC start
+# — see digest.yml's own schedule comment for why that ordering matters).
+# Both of those jobs typically finish in minutes, so this leaves generous
+# buffer without cutting it close enough to false-alarm on a slow day.
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab for testing
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check whether today's digest run actually happened
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx tsx scripts/check-digest-ran.ts
+        # check-digest-ran.ts sends its own alert email AND exits non-zero
+        # when no recent digest_runs row is found, so this run also shows
+        # as a failed (red) run in the Actions tab as a second signal.

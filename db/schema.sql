@@ -132,6 +132,27 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_dataset_name ON ingestion_runs(dataset_name);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_started_at ON ingestion_runs(started_at DESC);
 
+-- Added 2026-09-03: mirrors ingestion_runs' pattern for the digest job.
+-- scripts/run-digest.ts writes one row here every time it actually runs
+-- to completion (success, partial, or a caught crash). A separate
+-- watchdog job (.github/workflows/digest-watchdog.yml +
+-- scripts/check-digest-ran.ts) checks for a recent row here to detect
+-- GitHub Actions silently failing to trigger the scheduled digest.yml
+-- workflow at all — a failure mode digest.yml's own `if: failure()` step
+-- can never catch, since there's no run object for it to attach to.
+CREATE TABLE IF NOT EXISTS digest_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('success', 'partial', 'failed')) DEFAULT 'success',
+    sent_count INTEGER DEFAULT 0,
+    skipped_count INTEGER DEFAULT 0,
+    failed_count INTEGER DEFAULT 0,
+    error_log TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_digest_runs_started_at ON digest_runs(started_at DESC);
+
 CREATE ROLE app_user NOLOGIN;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -159,3 +180,4 @@ CREATE POLICY search_matches_isolation ON search_matches
 GRANT SELECT, INSERT, UPDATE, DELETE ON users, subscriptions, saved_searches, search_matches TO app_user;
 GRANT SELECT ON companies TO app_user;
 GRANT SELECT, INSERT, UPDATE ON ingestion_runs TO app_user;
+GRANT SELECT, INSERT, UPDATE ON digest_runs TO app_user;
