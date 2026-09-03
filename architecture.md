@@ -1432,3 +1432,50 @@ Once that's answered, revisit whether this stored value should flow into
 Paddle checkout, a separate invoicing system, or somewhere else
 entirely.
 
+## Incident: two sessions on the same repo, code shipped ahead of its migration — 2026-09-03
+
+Real, live-site incident during the VAT ID work above, worth recording
+so it isn't repeated. The user had a SECOND Claude session open against
+this same local project folder at the same time as this one, unknown to
+either session. That other session independently ran the exact
+git add/commit/push sequence this session had prepared (commit
+`fd63800`, "Add capture-and-store VAT ID (統一編號) field to account
+settings" — same message this session had drafted) and pushed it to
+`main`. Vercel auto-deploys on push, so the new code — including
+`app/api/account/route.ts`'s `SELECT id, vat_id FROM users` — went live
+immediately.
+
+The migration that creates `users.vat_id`
+(`scripts/migrate-add-vat-id.ts`) had NOT been run yet at that point —
+this session's plan had been to run it as the very next step, but the
+other session's push meant the code reached production first, out of
+that intended order. Result: `/api/account` started failing for every
+single request (querying a column that didn't exist yet), which broke
+the entire Account Settings page site-wide —
+`taiwanleads.com/account` showed "無法載入帳戶資訊，請重新整理頁面" for
+anyone who visited it. Caught by chance during this session's own
+post-work verification pass (checking the account page as part of
+confirming the feature worked), not by any alert — there is no
+monitoring on this app route or endpoint. Fixed immediately by running
+the migration once its absence was diagnosed; confirmed via live check
+that the account page loads normally again and the new 統一編號 field
+saves and persists correctly.
+
+**A second, unrelated commit from that other session** (`bc2b1c8`,
+"Document empty-search message fix and auto-match-on-create in
+architecture.md") landed on top of the above — purely additive
+documentation for Session 26's work (a real gap; this file had almost
+no record of Session 26 before that commit). Checked for conflicts with
+this session's own `architecture.md` edits: none — it inserted in the
+correct chronological position, nothing duplicated or overwritten.
+
+**Takeaway:** running two Claude sessions against the same live project
+folder at the same time is a real, demonstrated risk — not just a
+theoretical one — specifically because a schema-changing code commit
+can reach a Vercel-auto-deployed production site before its
+corresponding migration has been run, if two sessions interleave their
+steps. Going forward: avoid running more than one session against this
+repo at a time; if it does happen, treat "is the live site actually
+healthy right now" as a check worth making immediately, not assuming
+recent work is inert just because you didn't personally just push it.
+
