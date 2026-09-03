@@ -27,6 +27,7 @@ interface AccountInfo {
   scheduledCancellation: boolean;
   updatePaymentMethodUrl: string | null;
   paddleUnreachable?: boolean;
+  vatId: string | null;
 }
 
 interface Props {
@@ -51,12 +52,22 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
   const [actionPending, setActionPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  // 2026-09-03: 統一編號 (VAT ID) capture-and-store field. Kept as its
+  // own input/saving/message state, separate from the plan-management
+  // `message` above, so a VAT ID save result doesn't get overwritten by
+  // (or overwrite) an unrelated cancel/change-plan message.
+  const [vatIdInput, setVatIdInput] = useState("");
+  const [vatIdSaving, setVatIdSaving] = useState(false);
+  const [vatIdMessage, setVatIdMessage] = useState<string | null>(null);
+
   async function loadAccount() {
     setLoading(true);
     try {
       const res = await fetch("/api/account");
       if (res.ok) {
-        setInfo(await res.json());
+        const data: AccountInfo = await res.json();
+        setInfo(data);
+        setVatIdInput(data.vatId ?? "");
       }
     } finally {
       setLoading(false);
@@ -66,6 +77,28 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
   useEffect(() => {
     loadAccount();
   }, []);
+
+  async function handleSaveVatId() {
+    setVatIdSaving(true);
+    setVatIdMessage(null);
+    try {
+      const res = await fetch("/api/account/vat-id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vatId: vatIdInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVatIdMessage(data.error || "儲存失敗，請稍後再試");
+      } else {
+        setVatIdMessage("已儲存。");
+        setVatIdInput(data.vatId ?? "");
+        setInfo((prev) => (prev ? { ...prev, vatId: data.vatId ?? null } : prev));
+      }
+    } finally {
+      setVatIdSaving(false);
+    }
+  }
 
   async function handleCancel() {
     if (!confirm("\u78ba\u5b9a\u8981\u53d6\u6d88\u8a02\u95b1\u55ce\uff1f\u60a8\u5c07\u53ef\u4f7f\u7528\u81f3\u672c\u671f\u7d50\u675f\u3002")) return;
@@ -142,6 +175,33 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
             )}
           </>
         )}
+      </div>
+
+      <div className="border border-default rounded-lg p-6 mb-6">
+        <p className="text-sm text-secondary mb-1">{"統一編號（選填）"}</p>
+        <p className="text-xs text-secondary mb-3">
+          {"目前僅供儲存，尚未用於發票或付款流程。"}
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={8}
+            value={vatIdInput}
+            onChange={(e) => setVatIdInput(e.target.value)}
+            placeholder="12345678"
+            className="border-default border rounded px-3 py-2 flex-1"
+          />
+          <button
+            type="button"
+            disabled={vatIdSaving}
+            onClick={handleSaveVatId}
+            className="border border-default rounded px-4 py-2 disabled:opacity-50 whitespace-nowrap"
+          >
+            {vatIdSaving ? "儲存中…" : "儲存"}
+          </button>
+        </div>
+        {vatIdMessage && <p className="text-sm mt-2">{vatIdMessage}</p>}
       </div>
 
       {message && (

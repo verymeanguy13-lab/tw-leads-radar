@@ -19,8 +19,13 @@ export async function GET() {
   }
 
   const sql = db();
-  const userRows = await sql`SELECT id FROM users WHERE email = ${session.user.email}`;
+  // 2026-09-03: also select vat_id so the account page can show/edit the
+  // saved 統一編號 alongside billing info — see app/api/account/vat-id/
+  // route.ts for the save endpoint and its comment for why this is
+  // capture-and-store only, not wired into Paddle checkout.
+  const userRows = await sql`SELECT id, vat_id FROM users WHERE email = ${session.user.email}`;
   const userId = userRows[0]?.id as string | undefined;
+  const vatId = (userRows[0]?.vat_id as string | null) ?? null;
   if (!userId) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -50,6 +55,7 @@ export async function GET() {
       currentPeriodEnd: null,
       scheduledCancellation: false,
       updatePaymentMethodUrl: null,
+      vatId,
     });
   }
 
@@ -62,6 +68,7 @@ export async function GET() {
         paddleSub.current_billing_period?.ends_at ?? sub.current_period_end,
       scheduledCancellation: paddleSub.scheduled_change?.action === "cancel",
       updatePaymentMethodUrl: paddleSub.management_urls?.update_payment_method ?? null,
+      vatId,
     });
   } catch (err) {
     console.error("Failed to fetch Paddle subscription:", err);
@@ -76,6 +83,7 @@ export async function GET() {
       scheduledCancellation: false,
       updatePaymentMethodUrl: null,
       paddleUnreachable: true,
+      vatId,
     });
   }
 }

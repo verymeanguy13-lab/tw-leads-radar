@@ -1291,13 +1291,73 @@ anything inside `digest.yml` itself (an internal check has the same
   false-alarm on a slow day. Runs completely independently of
   `digest.yml`'s own trigger, which is the entire point.
 
-Deployed and type-checked, but — consistent with this project's
-verification discipline — **NOT YET confirmed with a real fired
-watchdog run** as of this entry. A future session (or the user, via
-"Run workflow" on the Actions tab) should manually trigger
-`digest-watchdog.yml` once via `workflow_dispatch` to confirm the OK
-path (a recent `digest_runs` row exists → clean exit, no email), and
-ideally also temporarily verify the alert path works (e.g. by checking
-`digest_runs` is truly empty in a moment where no real send has fired
-in 8+ hours) before fully trusting it as a silent-failure safety net.
+Deployed, type-checked, and verified live via manual `workflow_dispatch`
+runs (not just the code being trusted): "Digest" was triggered manually,
+ran green, and sent real digest emails to the user's kept test searches
+— confirming both the digest cadence system itself AND that it now
+writes a `digest_runs` row. "Digest Watchdog" was then triggered
+manually right after and also ran green, confirming it correctly found
+that fresh row and did not false-alarm. The alert path itself (no row
+found → email sent, red run) was NOT separately tested — lower priority
+to verify deliberately, since triggering it for real means either
+waiting for an actual gap or briefly disabling `digest.yml`, and the OK
+path being correct is the one that matters day-to-day.
+
+## VAT ID (統一編號) capture-and-store — 2026-09-03
+
+Addressed the last carried-over item this session, item #3 on the
+priority list: "統一編號/VAT ID capture at checkout (B2B reverse-charge
+VAT, blueprint Section 7)." The actual "Section 7" spec document this
+references was not found anywhere in the repo when this session looked
+for it — only mentioned by name in this file's own earlier entries — so
+its exact requirements are unverifiable at this point.
+
+Before building anything, flagged an important distinction to the user:
+Paddle's checkout overlay has built-in support for collecting a business
+customer's name + tax ID directly (`components/CheckoutButton.tsx`
+already loads `paddle.js` and calls `Checkout.open()`), but Paddle's
+reverse-charge tax handling is built around the EU/UK VAT framework —
+not necessarily the right mechanism for Taiwan's own 統一發票 (GUI
+invoice) system, which is what a Taiwan business would actually need a
+統一編號 for. Given that uncertainty, and that Paddle live mode + real
+payments are still deliberately paused (see the "Deliberately deferred
+together" section), the user chose the lowest-risk option: capture and
+store the number on the account, with no functional effect on billing
+or checkout yet, rather than build checkout logic on an unconfirmed tax
+mechanism.
+
+**What was built:**
+- `users.vat_id VARCHAR(8)` — new nullable column (migration:
+  `scripts/migrate-add-vat-id.ts`, idempotent `ADD COLUMN IF NOT
+  EXISTS`, same pattern as other one-off migrations).
+- `app/api/account/vat-id/route.ts` — new `POST` endpoint, session-gated
+  like every other `/api/account/*` route. Validates format only (exactly
+  8 digits, or empty to clear) — deliberately does NOT implement the
+  official 統一編號 checksum/validity algorithm (a specific weighted-digit
+  formula), which is out of scope for a capture-and-store field. A
+  well-formed but not-actually-registered number can still be saved.
+- `app/api/account/route.ts`'s existing `GET` now also selects and
+  returns `vat_id` (all three response branches — free tier, live Paddle
+  fetch, and the Paddle-unreachable fallback) so the account page can
+  show the current value.
+- `app/(app)/account/AccountPageClient.tsx` — new input + save button,
+  visible regardless of tier, with an explicit Traditional Chinese note
+  ("目前僅供儲存，尚未用於發票或付款流程" — currently for storage only, not yet
+  used for invoicing or payment) so nobody assumes filling this in
+  changes anything about their actual invoice or checkout today.
+
+**Deliberately NOT touched:** `components/CheckoutButton.tsx` and the
+Paddle checkout flow itself — no business-customer fields were added to
+`Checkout.open()`. Signup (`app/(marketing)/signup/page.tsx` /
+`app/api/auth/signup/route.ts`) also wasn't touched — VAT ID capture
+lives in Account Settings only, editable any time after signup, not
+gated into the signup or checkout flow.
+
+**Still genuinely open, carried forward:** whether Paddle's own
+tax-handling mechanism is even the right vehicle for Taiwan 統一發票
+compliance is unresolved and belongs with the other unresolved legal/tax
+items (see "Legal — still unresolved, flagged for a lawyer/accountant").
+Once that's answered, revisit whether this stored value should flow into
+Paddle checkout, a separate invoicing system, or somewhere else
+entirely.
 

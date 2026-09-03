@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified_at TIMESTAMPTZ,
     verification_token_hash TEXT,
     verification_token_expires_at TIMESTAMPTZ,
+    -- Added 2026-09-03: 統一編號 (Taiwan Uniform Business Number),
+    -- capture-and-store only for now - see the 2026-09-03 architecture.md
+    -- entry for why this isn't wired into Paddle checkout yet.
+    vat_id VARCHAR(8),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
