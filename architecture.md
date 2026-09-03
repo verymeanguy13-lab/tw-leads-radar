@@ -1479,3 +1479,47 @@ repo at a time; if it does happen, treat "is the live site actually
 healthy right now" as a check worth making immediately, not assuming
 recent work is inert just because you didn't personally just push it.
 
+## Unverified-signup cleanup job; Monthly Industry CSV Refresh investigated — 2026-09-03
+
+Addressed priority item #4 and investigated item #5.
+
+**Investigation: Monthly Industry CSV Refresh "has never run" (item #5).**
+Turned out not to be a bug. Its workflow schedule is `0 4 10 * *` — once
+a month, on the 10th. The workflow file itself was written 2026-08-23,
+after that month's 10th had already passed, so its first-ever scheduled
+run is 2026-09-10. Nothing to fix here; just wasn't due yet. Revisit
+only if it fails to fire after that date.
+
+**Unverified email/password signups never expire (item #4).** Traced the
+full signup/verification flow (`app/api/auth/signup`,
+`app/api/auth/verify`, `lib/email/verification.ts`, `lib/auth.ts`) and
+confirmed credential-based signups sit in `users` forever if never
+verified, while Google sign-ins are unaffected (auto-verified
+immediately on signup).
+
+**What was built:**
+- `scripts/cleanup-unverified-signups.ts` — a DELETE scoped to
+  `password_hash IS NOT NULL AND email_verified_at IS NULL AND
+  created_at` older than 7 days (user chose 7 days over the 3- or
+  14-day alternatives). Safe to hard-delete since an unverified
+  credentials-only user can never log in, and so can never own
+  `saved_searches` or a subscription.
+- `.github/workflows/cleanup-unverified-signups.yml` — scheduled daily
+  at 05:00 UTC (clear of all other scheduled jobs), plus
+  `workflow_dispatch` for manual runs, using the same failure-alert-email
+  pattern as the other scheduled jobs in this repo.
+
+Committed as `5652c46`, pushed, and verified live: manually triggered
+via `workflow_dispatch` on the Actions tab, run completed with status
+"Success" in 27s. Found 0 rows to delete on this run — expected, since
+the site is new and likely has no signups yet that are both unverified
+AND more than 7 days old. **Not yet verified:** the job running on its
+own real 05:00 UTC schedule — only the manual trigger has been tested
+so far. Check the Actions tab after it's had a chance to fire on its
+own to confirm the schedule itself works.
+
+Also checked in on the kept "daily"/"daily 2" test searches from the
+digest-watchdog work (previous session): a daily digest email did
+arrive that day. Full confirmation across daily/weekly/monthly cadences
+still needs another day or two of watching.
+
