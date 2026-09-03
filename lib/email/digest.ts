@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { db } from "../db";
 import { formatCapital, formatDate } from "../utils";
 import { getUserTier } from "../tiers";
+import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH } from "../attribution";
 import type { Company } from "../../types/db";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -304,6 +305,29 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   if (changedRows.length > 0) subjectParts.push(`${changedRows.length} 筆狀態異動`);
   const subjectSummary = subjectParts.join("、");
 
+  // Attribution (2026-09-03): completes the consolidation started in
+  // lib/attribution.ts (see that file's comment) - the results page and
+  // CSV export already carried this required credit line, the digest
+  // email was the one place company data reaches a user without it.
+  // Scoped to only the datasets actually represented among the RENDERED
+  // rows below, not the truncated overflow (which isn't actually shown
+  // in this email) - same scoping rule as
+  // app/(app)/searches/[id]/page.tsx's displayedDatasetIds.
+  const displayedDatasetIds = Array.from(
+    new Set(
+      [...newRowsToRender, ...changedRowsToRender]
+        .map((r) => r.source_dataset)
+        .filter((d): d is string => !!d)
+    )
+  );
+  const attributionHtml = displayedDatasetIds
+    .filter((dsId) => ATTRIBUTION_NAME_ZH[dsId])
+    .map(
+      (dsId) =>
+        `<p style="margin:2px 0;">提供機關／${ATTRIBUTION_AGENCY} ${new Date().getFullYear()} ${ATTRIBUTION_NAME_ZH[dsId]}，依政府資料開放授權條款進行公開徵集及加值利用</p>`
+    )
+    .join("");
+
   const sectionsHtml = `
     ${
       newRows.length > 0
@@ -334,6 +358,11 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       <h2 style="margin-bottom:4px;">「${search.name}」有 ${subjectSummary}</h2>
       <p style="color:#6b7280;font-size:13px;margin-top:0;">新公司快報</p>
       ${sectionsHtml}
+      ${
+        attributionHtml
+          ? `<div style="color:#6b7280;font-size:12px;margin-top:16px;">${attributionHtml}</div>`
+          : ""
+      }
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">
         登入查看完整結果：<a href="${process.env.NEXTAUTH_URL}/searches/${search.id}" style="color:#2563eb;">taiwanleads.com</a>
         　|

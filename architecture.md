@@ -808,8 +808,31 @@ picture.
   it silently combined with the login page's callbackUrl default and
   free tier's 1-search limit to leave a real user unable to ever
   navigate back to their own saved search. Built now; see below.
-- Session 11's inline-attribution objective remains genuinely
-  incomplete, not just unchecked.
+- RESOLVED 2026-08-30 (was stale, not accurate at time of investigation):
+  this note claimed Session 11's inline-attribution objective remained
+  incomplete. On checking, it turned out to already be correctly and
+  fully implemented on the results page and CSV export (both properly
+  scoped to only datasets actually represented in the displayed rows,
+  exactly per the blueprint's requirement) - this note was simply never
+  updated after that work happened, same pattern as the earlier stale
+  Session 19 note below. The ONE genuine gap found: the digest email
+  had no attribution at all. Fixed, and consolidated the
+  previously-duplicated attribution constants (defined independently,
+  with different names, in both the results page and CSV export) into
+  a single shared `lib/attribution.ts` used by all three now.
+- RESOLVED 2026-09-03 (correction to the note directly above): "used by
+  all three now" was written ahead of the code actually being done -
+  `lib/email/digest.ts` had never been updated to import from
+  `lib/attribution.ts`. This sat as an uncommitted, unpushed change on
+  the development machine (along with the results-page and CSV-export
+  updates) with the digest.ts half never finished, and was only caught
+  when a routine "no results" bug investigation surfaced the stale
+  working tree via `git status`. Finished now: `lib/email/digest.ts`
+  imports `ATTRIBUTION_AGENCY`/`ATTRIBUTION_NAME_ZH` from
+  `lib/attribution.ts` and renders the same credit line in the email
+  footer, scoped to only the datasets actually represented among the
+  rendered (non-overflow) rows - not yet verified with a real send, see
+  Session 26's notes.
 - RESOLVED 2026-08-27: the freshness-tier enforcement logic is now
   built — see the post-Session-23 entry below for the full story
   (it took three attempts to get right).

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db, withUserContext } from "@/lib/db";
 import { canExportCsv } from "@/lib/tiers";
-import { DATASET_SOURCES } from "@/lib/ingestion/sources.config";
+import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH as DATASET_NAME_ZH } from "@/lib/attribution";
 import type { Company } from "@/types/db";
 
 // Session 20 — CSV Export
@@ -17,15 +17,9 @@ import type { Company } from "@/types/db";
 // app/(app)/searches/[id]/page.tsx's existing patterns (datasetFreshness
 // keyed by each row's own source_dataset, attribution scoped to datasets
 // actually present) rather than inventing a separate approach.
-
-const ATTRIBUTION_AGENCY = "經濟部商業發展署";
-
-const DATASET_NAME_ZH: Record<string, string> = Object.fromEntries(
-  DATASET_SOURCES.filter((s) => s.id !== "gcis_daily_setup_query").map((s) => [
-    s.id,
-    s.nameZh,
-  ])
-);
+// Attribution constants now shared via lib/attribution.ts (previously
+// duplicated locally here and in the results page, with different
+// names for the same mapping - consolidated 2026-08-30).
 
 const STATUS_LABEL: Record<string, string> = {
   active: "營運中",

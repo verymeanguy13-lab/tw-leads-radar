@@ -4,7 +4,7 @@ import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { db, withUserContext } from "@/lib/db";
 import { formatCapital, formatDate } from "@/lib/utils";
-import { DATASET_SOURCES } from "@/lib/ingestion/sources.config";
+import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH } from "@/lib/attribution";
 import DataAttribution, { AttributionDataset } from "@/components/DataAttribution";
 import RunNowButton from "@/components/RunNowButton";
 import ExportCsvButton from "@/components/ExportCsvButton";
@@ -34,19 +34,10 @@ const STATUS_CLASS: Record<string, string> = {
   suspended: "status-suspended",
 };
 
-// Attribution scope matches components/Footer.tsx's precedent: the 6
-// data.gov.tw open-data datasets carry the required 政府資料開放授權條款
-// credit line. gcis_daily_setup_query is a live GCIS query API, not one
-// of those 6 licensed batch datasets, so it's excluded here the same way
-// Footer.tsx excludes it - unverified against GCIS's own terms, flagged
-// in this session's notes for a human check.
-const ATTRIBUTION_NAME_ZH: Record<string, string> = Object.fromEntries(
-  DATASET_SOURCES.filter((s) => s.id !== "gcis_daily_setup_query").map((s) => [
-    s.id,
-    s.nameZh,
-  ])
-);
-const ATTRIBUTION_AGENCY = "經濟部商業發展署";
+// Attribution constants now shared via lib/attribution.ts (see that
+// file's comment - this used to be defined locally here, duplicated
+// with slightly different naming in the CSV export route, until
+// consolidated 2026-08-30).
 
 function parseSort(value: string | undefined): SortKey {
   if (value === "capital" || value === "address_region") return value;
@@ -319,9 +310,21 @@ export default async function SearchResultsPage({
         </p>
       )}
 
+      {/* 2026-09-03: reworded from a generic "no results, try adjusting
+          your criteria" message. Creating a saved search (POST
+          /api/searches) never itself runs matchSearch() - a brand new
+          search sits at zero rows in search_matches until the user
+          clicks "立即執行" or the next scheduled matchAllSearches() run,
+          so the old wording was actively misleading for the single most
+          common way to land here (right after creating a search) - it
+          implied the filters themselves were the problem. There's no
+          column yet distinguishing "never matched" from "matched, truly
+          zero" (would need e.g. a last_matched_at on saved_searches), so
+          this can't branch on that - the new wording is just written to
+          be true and actionable either way. */}
       {totalMatches === 0 ? (
         <p className="text-secondary text-sm py-12 text-center">
-          目前沒有符合條件的結果，稍後再試或調整搜尋條件。
+          目前沒有符合條件的結果。若這是剛建立的搜尋條件，請點擊上方「立即執行」按鈕進行比對；系統也會在每次資料更新時自動為您比對。
         </p>
       ) : (
         <>
