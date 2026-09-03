@@ -1215,6 +1215,77 @@ incrementally through individual migration scripts (which all use
 correct syntax) rather than by ever actually executing this file
 directly.
 
+## Saved-search creation didn't auto-match; misleading "no results" message — 2026-09-03
+
+Investigated after the user reported (via screenshot) that a freshly
+created "daily" saved search's results page showed "目前沒有符合條件的結果，
+稍後再試或調整搜尋條件" (no results, try adjusting your criteria) despite
+Session 25's own trace showing this exact kind of search finding ~20
+real matches.
+
+Root cause: `POST /api/searches` (`app/api/searches/route.ts`, search
+creation) never called `matchSearch()` — it only inserted the row. A
+brand new search sat at zero rows in `search_matches` until the user
+manually clicked 立即執行 (Run Now) or the next scheduled
+`matchAllSearches()` run, and the zero-match message on the results
+page (`app/(app)/searches/[id]/page.tsx`) had no way to distinguish
+"never matched yet" from "matched, genuinely zero" — no column tracks
+that (would need something like a `last_matched_at` on
+`saved_searches`, which doesn't exist) — so it worded itself as if the
+user's own filters were the problem, which was actively misleading for
+the single most common way to land on this page. Confirmed by testing,
+not just reading the code: the user clicked 立即執行 and the search
+populated immediately.
+
+Fixed two ways, in the same investigation:
+1. Reworded the zero-match message to be true and actionable regardless
+   of which of the two states caused it: "若這是剛建立的搜尋條件，請點擊上方
+   「立即執行」按鈕進行比對；系統也會在每次資料更新時自動為您比對。"
+2. The user then asked the sharper follow-up question: why does
+   creation require a manual click at all? No rationale for the
+   two-step design was found anywhere in the code or this file —
+   concluded it was an oversight, not a deliberate choice. `POST
+   /api/searches` now calls `matchSearch(created.id)` synchronously
+   right after inserting the new saved_search, wrapped in try/catch so
+   a matching failure never blocks the search from being created —
+   falls back to the next scheduled run if it fails, logged
+   server-side via `console.error`.
+
+Not a schema change: no `last_matched_at`-style column was added. Fix
+#1 is what makes that gap not matter for the message's accuracy, and
+fix #2 makes the gap rare in practice (most searches now have a real
+answer within seconds of creation, since the initial match runs before
+the user is even redirected to the results page). A search whose
+filters are narrow enough to genuinely match nothing even after that
+initial run will still see the "if newly created, click 立即執行" wording,
+which is technically redundant in that specific case (matching already
+ran) but not incorrect (clicking it again just re-runs matchSearch()
+and correctly re-confirms zero). A proper `last_matched_at`-based
+distinction remains low-priority cosmetic polish, not a functional gap.
+
+Two small, unrelated bugs were also found and fixed in the same
+investigation, landed together in the same commit (`a26578d`) as fix
+#1 above (fix #2 followed in a separate commit, `4e7074c`, after the
+user's follow-up question):
+- `lib/utils.ts`'s `formatDate()` had no explicit timezone, so it
+  rendered in whatever timezone the server process runs in (Vercel's
+  serverless functions run in UTC) rather than Taipei time. Concretely:
+  an ingestion run completing at 07:50 Taipei time is still 23:50 the
+  previous day in UTC, so the results page's `資料更新日期` line was
+  displaying a date up to a day earlier than the data actually was.
+  Fixed by adding `timeZone: "Asia/Taipei"`. Verified with a real
+  timestamp, not just by reading the fix: `2026-09-02T23:50:00.000Z`
+  (= 2026-09-03 07:50 Taipei) now correctly renders as `2026年9月3日`.
+- Completed a refactor that was found sitting uncommitted and unpushed
+  on the user's machine at the start of this session — see
+  `lib/attribution.ts`'s own comment and the "RESOLVED 2026-09-03
+  (correction to the note directly above)" entry earlier in this file
+  for the full story. In short: the digest email
+  (`lib/email/digest.ts`) was missing the government-data attribution
+  credit line that the results page and CSV export already had; that
+  was finished and verified by running the rendering logic standalone
+  before it was committed.
+
 ## Background-job reliability: 504 retry-with-backoff and a digest watchdog — 2026-09-03
 
 Two carried-over reliability items, addressed together at the user's
