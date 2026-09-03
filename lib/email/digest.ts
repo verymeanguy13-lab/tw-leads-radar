@@ -317,6 +317,18 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
     }
   `;
 
+  // 2026-09-03: added after a real test send landed in Gmail spam despite
+  // taiwanleads.com's SPF/DKIM/DMARC all showing verified in Resend - the
+  // domain-auth side was fine, so this targets the other big spam signal
+  // Gmail and other providers weigh heavily: bulk-looking mail with no way
+  // to opt out. The List-Unsubscribe(-Post) headers are what let Gmail
+  // show its own native "Unsubscribe" button next to the sender name
+  // (RFC 8058 - a client-initiated POST with no page load), and the
+  // footer link covers clients that don't support that. Both hit the same
+  // endpoint (app/api/searches/[id]/unsubscribe/route.ts), deliberately
+  // unauthenticated - see that route's own comment for why that's safe.
+  const unsubscribeUrl = `${process.env.NEXTAUTH_URL}/api/searches/${search.id}/unsubscribe`;
+
   const html = `
     <div style="font-family:sans-serif;color:#1a1d23;max-width:600px;">
       <h2 style="margin-bottom:4px;">「${search.name}」有 ${subjectSummary}</h2>
@@ -324,6 +336,8 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       ${sectionsHtml}
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">
         登入查看完整結果：<a href="${process.env.NEXTAUTH_URL}/searches/${search.id}" style="color:#2563eb;">taiwanleads.com</a>
+        　|
+        <a href="${unsubscribeUrl}" style="color:#6b7280;">取消此通知</a>
       </p>
     </div>
   `;
@@ -333,6 +347,10 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
     to: search.userEmail,
     subject: `「${search.name}」有 ${subjectSummary} — 新公司快報`,
     html,
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
   });
 
   if (result.error) {
