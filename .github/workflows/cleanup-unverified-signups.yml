@@ -1,0 +1,42 @@
+﻿name: Cleanup Unverified Signups
+
+# 2026-09-04: permanently deletes credential-based signups that never
+# completed email verification, once they're old enough that the
+# verification link itself (24h expiry - lib/email/verification.ts) is
+# long dead. See scripts/cleanup-unverified-signups.ts for the exact
+# deletion criteria and why it's safe to hard-delete.
+#
+# Cron is in UTC. 05:00 UTC is clear of the other scheduled jobs:
+# ingest-daily.yml (22:00), digest.yml (23:00), digest-watchdog.yml (02:00),
+# refresh-industry-csv.yml (04:00, but only on the 10th of the month).
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch: {} # allows manual "Run workflow" from the Actions tab for testing
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Delete unverified signups past the retention window
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx scripts/cleanup-unverified-signups.ts
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          curl -X POST "https://api.resend.com/emails" -H "Authorization: Bearer $RESEND_API_KEY" -H "Content-Type: application/json" -d "{\"from\":\"$EMAIL_FROM\",\"to\":\"$ALERT_EMAIL\",\"subject\":\"tw-leads-radar cleanup-unverified-signups FAILED\",\"html\":\"<p>The unverified-signup cleanup job failed. Check the Actions log for details.</p>\"}"
