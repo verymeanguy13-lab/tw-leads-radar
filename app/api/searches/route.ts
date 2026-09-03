@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db, withUserContext } from "@/lib/db";
 import { getUserTier, canCreateSavedSearch, isCadenceAllowed } from "@/lib/tiers";
+import { matchSearch } from "@/lib/matching/engine";
 
 const VALID_ENTITY_TYPES = ["company", "business", "both"];
 const VALID_CADENCE = ["weekly", "monthly", "daily"];
@@ -150,6 +151,27 @@ export async function POST(req: NextRequest) {
       { errors: { _general: "儲存失敗，請稍後再試。" } },
       { status: 500 }
     );
+  }
+
+  // 2026-09-03: run the first match synchronously right after creation,
+  // instead of leaving a brand new search sitting at zero rows in
+  // search_matches until the user clicks "立即執行" or the next scheduled
+  // matchAllSearches() run. Previously nothing called matchSearch() here
+  // at all, so every newly-created search landed on its results page
+  // showing "no results" - indistinguishable from a search whose filters
+  // genuinely match nothing - which is exactly the confusion that led to
+  // this fix (see the results page's 2026-09-03 comment for the other
+  // half of that investigation).
+  //
+  // Deliberately does not fail search creation if this throws - the
+  // search itself is already safely committed to the database at this
+  // point, and a matching failure here just means it falls back to the
+  // next scheduled run, same as it always has. Logged so a real,
+  // recurring failure here doesn't go unnoticed.
+  try {
+    await matchSearch(created.id);
+  } catch (err) {
+    console.error(`Initial matchSearch() failed for new saved_search ${created.id}:`, err);
   }
 
   return NextResponse.json({ id: created.id }, { status: 201 });
