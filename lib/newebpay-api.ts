@@ -1,0 +1,153 @@
+// 2026-09-04 — 藍新 (NewebPay) 信用卡定期定額 (recurring credit card)
+// server-side API client. Mirrors lib/paddle-api.ts's role for Paddle,
+// but NewebPay has no equivalent of a client-side Checkout.js call —
+// the Period-creation request below IS the checkout initiation, done
+// entirely server-side, then the merchant redirects the browser to
+// NewebPay's own hosted payment page using the encrypted PostData_ this
+// module produces.
+//
+// Field-level spec this is built against: pulled 2026-09-04 from a
+// third-party mirror of NewebPay's own PDF, version NDNP-1.0.4
+// (2024/05/15) — NOT the newest NDNP-1.0.6 referenced in NewebPay's own
+// search-indexed filenames, which this session could not fetch (their
+// direct download links 404'd/session-gated). See architecture.md's
+// 2026-09-04 "藍新 (NewebPay) 信用卡定期定額 field-level API spec pulled"
+// entry for the full gap list. Re-verify every field name here against
+// the actual current PDF, ideally against a real sandbox account,
+// before this touches production traffic — nothing in this file has
+// been tested against a live or sandbox NewebPay endpoint.
+//
+// Setup required before this works: a 藍新 個人 (individual) merchant
+// account (2026-09-04 decision — staying unincorporated), with
+// NEWEBPAY_MERCHANT_ID, NEWEBPAY_HASH_KEY, and NEWEBPAY_HASH_IV set from
+// that account's credentials. None of that exists yet as of this
+// writing — this module will throw at runtime until it does.
+
+import crypto from "crypto";
+
+const NEWEBPAY_BASE_URL =
+  process.env.NEXT_PUBLIC_NEWEBPAY_ENV === "sandbox"
+    ? "https://ccore.newebpay.com"
+    : "https://core.newebpay.com";
+
+const PERIOD_CREATE_PATH = "/MPG/period";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`NewebPay: ${name} is not set`);
+  }
+  return value;
+}
+
+/**
+ * AES-256-CBC encrypt, per NewebPay's convention: key = HashKey (32
+ * bytes), iv = HashIV (16 bytes), PKCS7 padding (Node's default).
+ * Output is lowercase hex, matching every third-party integration
+ * example found for this platform.
+ */
+function encryptPostData(fields: Record<string, string | number>): string {
+  const hashKey = requireEnv("NEWEBPAY_HASH_KEY");
+  const hashIv = requireEnv("NEWEBPAY_HASH_IV");
+
+  const query = Object.entries(fields)
+    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+    .join("&");
+
+  const cipher = crypto.createCipheriv("aes-256-cbc", hashKey, hashIv);
+  const encrypted = Buffer.concat([cipher.update(query, "utf8"), cipher.final()]);
+  return encrypted.toString("hex");
+}
+
+/**
+ * Decrypt an AES-256-CBC hex payload NewebPay sent back (TradeInfo on
+ * their general MPG checkout flow — see the route-level comment in
+ * app/api/webhooks/newebpay/route.ts for why the Period API's notify
+ * envelope specifically is NOT confirmed to use this same field name).
+ * setAutoPadding(false) + stripping trailing padding bytes matches the
+ * pattern several independent 藍新 integration writeups use, since
+ * NewebPay's own padding scheme has historically not matched Node's
+ * strict PKCS7 validation in every case.
+ */
+export function decryptTradeInfo(hex: string): string {
+  const hashKey = requireEnv("NEWEBPAY_HASH_KEY");
+  const hashIv = requireEnv("NEWEBPAY_HASH_IV");
+
+  const decipher = crypto.createDecipheriv("aes-256-cbc", hashKey, hashIv);
+  decipher.setAutoPadding(false);
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(hex, "hex")),
+    decipher.final(),
+  ]);
+  // Strip PKCS7 padding / trailing control bytes NewebPay's own padding
+  // can leave behind — matches the \x00-\x20 strip several independent
+  // integration writeups use rather than trusting setAutoPadding(true).
+  return decrypted.toString("utf8").replace(/[\x00-\x20]+$/, "");
+}
+
+/** SHA256("HashKey={key}&{tradeInfoHex}&HashIV={iv}") uppercased — the
+ * checksum NewebPay computes the same way on their end and expects to
+ * match the TradeSha field, on their general MPG notify convention. */
+export function computeTradeSha(tradeInfoHex: string): string {
+  const hashKey = requireEnv("NEWEBPAY_HASH_KEY");
+  const hashIv = requireEnv("NEWEBPAY_HASH_IV");
+  const raw = `HashKey=${hashKey}&${tradeInfoHex}&HashIV=${hashIv}`;
+  return crypto.createHash("sha256").update(raw, "utf8").digest("hex").toUpperCase();
+}
+
+export type PeriodType = "D" | "W" | "M" | "Y";
+
+export interface CreatePeriodOrderParams {
+  merchantOrderNo: string;
+  periodAmt: number;
+  periodType: PeriodType;
+  /** Day/point within the cycle NewebPay charges on — string(4) per the
+   * spec; exact encoding differs by periodType and isn't fully spelled
+   * out in the field list this was built from. Confirm the exact
+   * expected format (e.g. "01" for day-of-month on M) before using. */
+  periodPoint: string;
+  periodTimes: number;
+  payerEmail: string;
+  prodDesc: string;
+  returnUrl?: string;
+  notifyUrl?: string;
+}
+
+/**
+ * Builds the encrypted PostData_ for a new recurring order. This does
+ * NOT call fetch() and get a JSON response back the way Paddle's REST
+ * API does — NewebPay's Period-creation flow returns an HTML page
+ * meant to be shown to (or auto-submitted by) the payer's browser, so
+ * the caller is responsible for redirecting/rendering the response,
+ * not parsing JSON out of it. Not yet wired into any checkout route —
+ * no caller exists yet.
+ */
+export function buildCreatePeriodOrderRequest(params: CreatePeriodOrderParams): {
+  url: string;
+  postData: string;
+  merchantId: string;
+} {
+  const merchantId = requireEnv("NEWEBPAY_MERCHANT_ID");
+
+  const fields: Record<string, string | number> = {
+    RespondType: "JSON",
+    TimeStamp: Math.floor(Date.now() / 1000),
+    Version: "1.5",
+    MerOrderNo: params.merchantOrderNo,
+    PeriodAmt: params.periodAmt,
+    PeriodType: params.periodType,
+    PeriodPoint: params.periodPoint,
+    PeriodStartType: 2, // full amount charged on first cycle
+    PeriodTimes: params.periodTimes,
+    PayerEmail: params.payerEmail,
+    ProdDesc: params.prodDesc,
+  };
+  if (params.returnUrl) fields.ReturnURL = params.returnUrl;
+  if (params.notifyUrl) fields.NotifyURL = params.notifyUrl;
+
+  return {
+    url: `${NEWEBPAY_BASE_URL}${PERIOD_CREATE_PATH}`,
+    postData: encryptPostData(fields),
+    merchantId,
+  };
+}

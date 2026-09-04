@@ -22,6 +22,18 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     paddle_customer_id TEXT,
     paddle_subscription_id TEXT UNIQUE,
+    -- Added 2026-09-04: 藍新 (NewebPay) recurring-billing columns, added
+    -- alongside the paddle_* columns rather than replacing them - Paddle
+    -- checkout stays live until the NewebPay integration is built AND
+    -- verified (2026-09-04 billing-switch decision). newebpay_period_no
+    -- is NewebPay's assigned recurring-commitment ID, playing the same
+    -- role paddle_subscription_id plays for Paddle. There is no
+    -- NewebPay equivalent of paddle_customer_id - the Period API has no
+    -- separate "customer" object, so newebpay_merchant_order_no (the
+    -- order number *we* generate at checkout-initiation time) is what
+    -- ties a subscription row back to the order that created it.
+    newebpay_merchant_order_no TEXT UNIQUE,
+    newebpay_period_no TEXT UNIQUE,
     tier VARCHAR(20) NOT NULL CHECK (tier IN ('free', 'pro', 'business')) DEFAULT 'free',
     status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'none')) DEFAULT 'none',
     current_period_end TIMESTAMPTZ,
@@ -30,6 +42,26 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
+
+-- Added 2026-09-04: bridges NewebPay's Period-creation call (which only
+-- accepts a MerOrderNo, ProdDesc, and payment fields - no arbitrary
+-- custom-data JSON the way Paddle's checkout does) to which user/tier
+-- that order is actually for. A row here gets inserted at
+-- checkout-initiation time (not yet built) and read by the NewebPay
+-- webhook (app/api/webhooks/newebpay/route.ts) when the first
+-- successful-charge notify comes back, keyed on MerchantOrderNo. Rows
+-- are expected to be short-lived - claimed (or expired) shortly after
+-- creation - so this intentionally isn't merged into `subscriptions`
+-- itself, which represents a real, resolved subscription.
+CREATE TABLE IF NOT EXISTS newebpay_pending_orders (
+    merchant_order_no TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tier VARCHAR(20) NOT NULL CHECK (tier IN ('pro', 'business')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_newebpay_pending_orders_user_id ON newebpay_pending_orders(user_id);
 
 CREATE TABLE IF NOT EXISTS companies (
     uniform_id VARCHAR(8) PRIMARY KEY,
@@ -163,6 +195,7 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE saved_searches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE search_matches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE newebpay_pending_orders ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY users_isolation ON users
     USING (id = current_setting('app.current_user_id', true)::UUID);
@@ -181,7 +214,17 @@ CREATE POLICY search_matches_isolation ON search_matches
         )
     );
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON users, subscriptions, saved_searches, search_matches TO app_user;
+-- No user-scoped SELECT policy needed beyond isolation itself: the
+-- NewebPay webhook (app/api/webhooks/newebpay/route.ts) reads this
+-- table via db() (the non-RLS connection, same as the Paddle webhook
+-- uses for `subscriptions`), since a server-to-server notify callback
+-- has no app.current_user_id to set. Checkout-initiation code (not yet
+-- built), by contrast, should insert through withUserContext like every
+-- other user-owned write in this app.
+CREATE POLICY newebpay_pending_orders_isolation ON newebpay_pending_orders
+    USING (user_id = current_setting('app.current_user_id', true)::UUID);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON users, subscriptions, saved_searches, search_matches, newebpay_pending_orders TO app_user;
 GRANT SELECT ON companies TO app_user;
 GRANT SELECT, INSERT, UPDATE ON ingestion_runs TO app_user;
 GRANT SELECT, INSERT, UPDATE ON digest_runs TO app_user;
