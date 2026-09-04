@@ -9,6 +9,7 @@ import DataAttribution, { AttributionDataset } from "@/components/DataAttributio
 import RunNowButton from "@/components/RunNowButton";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import DeleteSearchButton from "@/components/DeleteSearchButton";
+import PauseSearchButton from "@/components/PauseSearchButton";
 import { getUserTier } from "@/lib/tiers";
 import type { Company } from "@/types/db";
 
@@ -209,7 +210,7 @@ export default async function SearchResultsPage({
   // RLS (saved_searches_isolation) means this only returns a row if the
   // search actually belongs to the signed-in user.
   const searches = await withUserContext(userId, (sqlClient) =>
-    sqlClient`SELECT id, name, industry_codes FROM saved_searches WHERE id = ${id}`
+    sqlClient`SELECT id, name, industry_codes, paused FROM saved_searches WHERE id = ${id}`
   );
   const savedSearch = searches[0];
   if (!savedSearch) {
@@ -294,6 +295,7 @@ export default async function SearchResultsPage({
         <h1 className="text-xl font-bold">{savedSearch.name}</h1>
         <RunNowButton searchId={id} />
         <ExportCsvButton searchId={id} />
+        <PauseSearchButton searchId={id} paused={savedSearch.paused} />
         <DeleteSearchButton searchId={id} searchName={savedSearch.name} />
       </div>
 
