@@ -1432,6 +1432,13 @@ Once that's answered, revisit whether this stored value should flow into
 Paddle checkout, a separate invoicing system, or somewhere else
 entirely.
 
+**UPDATE 2026-09-04:** this question is now partially answered — see
+"Decision: switching billing processor to 藍新 (NewebPay)" below. Paddle
+was confirmed to have no 統一發票 mechanism at all, which is part of why
+藍新 (via its ezPay 電子發票 add-on) was chosen instead. Still open:
+whether this stored `vat_id` value can actually flow into ezPay invoicing
+once that integration is built — not yet wired to anything.
+
 ## Incident: two sessions on the same repo, code shipped ahead of its migration — 2026-09-03
 
 Real, live-site incident during the VAT ID work above, worth recording
@@ -1681,4 +1688,52 @@ agreement. Recorded here factually so a future session has this context
 rather than re-deriving it from scratch — not to relitigate it
 unprompted, but to know it's already been raised once if it comes up
 again.
+
+## Decision: switching billing processor to 藍新 (NewebPay) — 2026-09-04, continued
+
+Following the payment-processor research above, the user decided to
+proceed with 藍新 (NewebPay) instead of Paddle. This is a decision, not
+yet built — the Paddle checkout button remains live and unchanged on
+taiwanleads.com; nothing in the code was touched this session.
+
+Documented as a new dated entry appended to Section 11 (Corrections &
+Clarifications Log) of the blueprint doc
+(`tw-leads-radar-blueprint-updated-14 (2).docx`), matching that
+document's own established format for logging real-world decisions and
+corrections. The existing Paddle-specific sections (2.5, 7, Session 18,
+the `subscriptions` schema, the launch checklist) were deliberately
+**not** rewritten in place — the user chose the faster addendum
+approach over a full rewrite, so those sections still describe the
+original Paddle plan and should be read as superseded wherever they
+conflict with the new addendum.
+
+One new finding this session that resolves a real gap in the earlier
+research: 藍新 has an actively maintained 信用卡定期定額 (recurring
+credit card) API — confirmed via NewebPay's own versioned
+documentation-update announcements (as of this session: program spec
+v1.3, documentation v1.1.0, from 藍新's 金流API文件下載區). This means
+藍新 can support this product's existing recurring Plan A/B/C
+subscription billing model, not just one-off charges — previously an
+open question. The actual field-level API spec has not been downloaded
+or reviewed yet; that's required before any integration code is
+written.
+
+Still open, unchanged from the earlier entry: whether to sign up for
+the 個人 (individual, no 統一編號 needed, NT$200,000/transaction cap) or
+企業 (company, needs 統一編號, NT$600,000 cap, full API access) account
+tier — this ties directly into the still-open incorporation decision —
+and whether an individual account can actually use the ezPay 電子發票
+add-on, since 統一發票 issuance is normally tied to having a 統一編號.
+
+Explicitly deferred, by the user's own choice: hiding the Paddle
+checkout button on the live site. Not done this session on purpose —
+Paddle checkout stays live and functional until 藍新 is actually built
+and verified, so the site doesn't lose its only working payment path in
+the meantime.
+
+Sources checked this session (public pages only, not 藍新's own signed
+merchant agreement): newebpay.com's registration page (individual vs.
+company tiers), newebpay.com's news/documentation-update page for the
+信用卡定期定額 API, and site-now.app's 2026 NewebPay fee/rate
+comparison — none of this verified beyond what's publicly published.
 
