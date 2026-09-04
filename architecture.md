@@ -1845,3 +1845,11 @@ legal-review-drafts-v4.docx", on `main`.
 taiwanleads.com/privacy were actually loaded and checked — they render
 the correct, complete content with the filled-in blanks and today's
 date.
+
+## Privacy Policy edit: trimmed the unlimited-personal-liability characterization from §1 — 2026-09-04, continued
+
+User flagged that Privacy Policy §1 (營運者身分) explicitly stating "並就本服務相關債務負無限個人責任，直至完成公司登記為止" reads as an open invitation to opportunistic/malicious lawsuits — the liability itself is a background legal fact regardless of whether the policy states it, but spelling it out removes the need for a plaintiff to do any diligence to find it. **User stated this specific sentence was not part of what the lawyer reviewed** — this conflicts with the broader "approved as-is, no changes" confirmation logged in the ToS/Privacy publish entry above; flagging the inconsistency here rather than silently resolving it, since neither this session nor that one can adjudicate it.
+
+Trimmed, not deleted: removed only the liability-characterization clause ("並就本服務相關債務負無限個人責任，直至完成公司登記為止"), kept the identity disclosure required for PDPA purposes (natural person, no company registration yet, is the "非公務機關"/contracting party). §1 now reads: "本政策所稱「我們」，指本服務之實際提供者新公司快報。本服務目前以個人身分經營，尚未完成公司登記；服務提供者以自然人身分作為個人資料保護法上之「非公務機關」及本條款之契約當事人。"
+
+Not verified against the lawyer — this was a direct, explicit, repeated user instruction on her own live content, executed after the tradeoffs (removing wording doesn't remove the underlying personal-liability exposure; only incorporating does that) were explained. `app/(marketing)/privacy/page.tsx` edited directly (single string literal, no structural change); sanity-checked (brace/quote balance) rather than run through the full isolated-clone tsc/eslint pipeline, since the previous session's fuller verification was for a wholesale content replacement, not a one-line trim. Written to the real repo via the file bridge; not yet committed/pushed — no shell access to the local machine this session either, same as before.
