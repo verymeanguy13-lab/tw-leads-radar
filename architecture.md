@@ -1890,3 +1890,104 @@ Follow-up to the "not yet done: mapping these fields... webhook route" gap noted
 **Also not built, real scope left for later:** the checkout-initiation route/UI that would actually call `buildCreatePeriodOrderRequest()` and insert into `newebpay_pending_orders` — without it, this webhook has nothing to match incoming notifies against yet. And, per the standing decision, no change to `components/CheckoutButton.tsx` or hiding the Paddle checkout path — that stays deliberately untouched until NewebPay is built AND verified end-to-end.
 
 Not committed/pushed — same as every other change this session, written via the file bridge, no shell access to the local machine.
+
+## Two loose verification threads checked via browser tools; NewebPay checkout-initiation route/UI built — 2026-09-04, continued
+
+New session. Browser tools (a built-in browser pane, separate from the Windows machine's own Chrome) were available for the first time, closing the two threads the previous entry flagged as unreachable from a cloud sandbox alone.
+
+**Unverified-signup cleanup job (`cleanup-unverified-signups.yml`, cron `0 5 * * *`):** checked the Actions tab directly. Still only **one run total**, the same manual `workflow_dispatch` run from 2026-09-03 16:52 GMT+8 — no scheduled run has ever fired. The workflow file was committed 2026-09-03 08:49 UTC, so its first scheduled occurrence (05:00 UTC 2026-09-04) was already ~3h15m past due at the time this was checked (current time confirmed via `date -u`: 08:14 UTC 2026-09-04). **This is a real, unresolved anomaly, not confirmed as broken** — GitHub Actions schedules can lag under platform load, but a 3+ hour silent no-show on a brand-new schedule is on the high end of that and worth someone re-checking the Actions tab later today or tomorrow rather than assuming it's fine. Notably, this project already hit the exact "GitHub Actions silently doesn't trigger a schedule at all" failure mode once before (`digest-watchdog.yml`'s own comment, re: 2026-09-01–09-02) — this cleanup job has no equivalent watchdog, so nothing will alert if this isn't a one-time fluke. **Not fixed or built here** — flagging only; a watchdog for this job (mirroring `digest-watchdog.yml`'s pattern) would be a reasonable follow-up if the schedule keeps missing, but wasn't asked for this session.
+
+**Digest cadence (daily/weekly/monthly):** partially confirmed, not fully. Checked `verymeanguy13@gmail.com` (logged in already in the browser pane) and the `Digest`/`Digest Watchdog` Actions tabs. Findings:
+- `Digest #8` fired via its **real 23:00 UTC schedule** (not manual) — "Triggered via schedule 7 hours ago" — and succeeded. `Digest Watchdog #2` also fired on its real 02:00 UTC schedule and succeeded; since that job's entire purpose is to fail loudly when no real digest run happened (see the entry above it), a green watchdog run is real evidence the digest pipeline executed end-to-end today, not just that the wrapper workflow didn't crash.
+- However, **no digest email arrived in the inbox in the last 24 hours** (checked via `newer_than:1d`) — only a Tavily usage-alert and an unrelated Google sign-in notice. All the digest emails found (subjects like "「daily」有797筆新符合結果", "「daily 2」…", "「daily 3」…") are dated Sep 3, from what look like test saved-searches named "daily"/"daily 2"/"daily 3" — the names are user-chosen search labels, **not** an indicator of each search's actual `cadence` column value, so this doesn't confirm weekly/monthly specifically.
+- Could not fully disambiguate why no email arrived today: `scripts/run-digest.ts`'s own `getDueSavedSearches()` logic (cadence-vs-`last_sent_at` threshold, `lib/email/digest.ts`) would legitimately produce zero sends if nothing was newly due or if there were no new matches to report ("SKIP... nothing new to report" is a normal, successful outcome) — versus a real delivery problem despite the job reporting success. Distinguishing these needs either the job's own stdout log (GitHub's log viewer on this repo requires sign-in — "Sign in to view logs" — not attempted, no GitHub credentials in this session) or a direct read of the `digest_runs`/`saved_searches` tables (no `DATABASE_URL` available in this session). **Recommend:** if you want this fully closed out, either sign into GitHub and open the latest `Digest` run's log for its own `X sent, Y skipped, Z failed` summary line, or query `digest_runs` directly.
+
+**NewebPay checkout-initiation route/UI — real, unstarted scope from the to-do list, now built:**
+
+Built the missing piece both `lib/newebpay-api.ts`'s and `app/api/webhooks/newebpay/route.ts`'s own comments flagged: nothing previously called `buildCreatePeriodOrderRequest()` or inserted into `newebpay_pending_orders`, so the webhook had nothing to match incoming notifies against. Reviewed the existing Paddle-side patterns first (`components/CheckoutButton.tsx`, `app/api/account/change-plan/route.ts`, `app/api/webhooks/paddle/route.ts`, `db/schema.sql`'s own comment on `newebpay_pending_orders` prescribing `withUserContext`) and followed them rather than inventing new conventions.
+
+- `lib/tiers.ts`: added `TIER_PRICING` (NT$600/6,000 for pro, NT$1,300/13,000 for business, monthly/yearly) — NewebPay's Period API needs a real TWD amount up front, unlike Paddle's opaque price IDs. **These amounts are copied from the hard-coded display copy in `app/(marketing)/pricing/page.tsx`** — there was no shared source of truth before now, and there still isn't a fully shared one: if pricing ever changes, both places need updating by hand. Flagged in a code comment, same spirit as this file's own 2026-08-30 cadence-bug note about exactly this kind of two-places-to-update risk.
+- `app/api/checkout/newebpay/route.ts` (new): authenticated `POST`, mirrors `change-plan`'s session/user lookup. Guards against an already-active subscriber hitting this route (the inverse of `change-plan`'s own guard) to avoid orphaned pending-order rows. Generates a short alphanumeric `MerOrderNo`, computes `periodType`/`periodPoint` from cadence (monthly → `M` + zero-padded day-of-month; yearly → `Y` + `MMDD` — **the same unverified-format caveat `lib/newebpay-api.ts` already carries, not newly resolved**), sets `periodTimes` to 99 (the API's max — flagged in a comment as a real, unbuilt gap: NewebPay has no "run indefinitely" option the way Paddle does, so a subscription will need a fresh Period commitment after ~8 years monthly / 99 years yearly, and nothing detects or handles that yet), inserts into `newebpay_pending_orders` via `withUserContext`, then returns `{url, postData, merchantId}` to the client. Fails with a clear `503` (not a raw 500 or silent no-op) when `NEWEBPAY_MERCHANT_ID`/`HASH_KEY`/`HASH_IV` aren't set, which is expected right now — no merchant account exists yet.
+- `components/NewebpayCheckoutButton.tsx` (new): structured to mirror `CheckoutButton.tsx`'s loading/click-guard pattern, but the actual mechanism differs — NewebPay has no client-side checkout overlay, so this builds a hidden HTML form and does a real top-level `form.submit()` POST of `{MerchantID, PostData_}` straight to NewebPay's hosted `/MPG/period` page (a full navigation away from taiwanleads.com), not a `fetch()`/AJAX call. Field names (`MerchantID`, `PostData_`) were chosen to match what the webhook route and `lib/newebpay-api.ts`'s own comments already use, not invented fresh.
+- ProdDesc text is kept ASCII-only (`"TaiwanLeads Pro Plan (Monthly)"` etc.), not the Chinese plan names used in the UI — `ProdDesc`'s spec says string(100) "limited charset" and whether that covers UTF-8 Chinese was never confirmed; not worth risking on a field NewebPay might reject or mangle, especially since this text is only ever shown on NewebPay's own hosted page, not on taiwanleads.com.
+
+**Deliberately NOT done, matching the standing decision:** this route and button are **not wired into `app/(marketing)/pricing/page.tsx`** — nothing imports `NewebpayCheckoutButton` anywhere yet, so real users cannot reach it, and `CheckoutButton.tsx`/Paddle are completely untouched. This is a later, deliberate wiring step (to-do item 5), not an oversight. It also **cannot be tested end-to-end yet** — same missing-merchant-account blocker as everything else NewebPay.
+
+**Verification:** isolated fresh clone of the actual pushed state (confirmed via `git log` that `bdb3caa` — the previous session's full NewebPay scaffolding commit — was in fact committed and pushed since the last session ended, contradicting nothing since that session correctly logged it as not-yet-pushed *as of when it ended*), synced the one still-uncommitted local change (`privacy/page.tsx`'s liability-clause trim) in on top, then `npm ci`, `npx next typegen`, `npx tsc --noEmit` (clean, zero errors), `npx eslint` on the three new/changed files (clean), and a full `npm run lint` to confirm the 10 pre-existing errors it surfaces are all in untouched files (`AccountPageClient.tsx`, two admin pages, `lib/auth.ts`, `lib/ingestion/fetch.ts`, `lib/ingestion/upsert.ts` — the same `searches/[id]/page.tsx` `Date.now()` line already confirmed pre-existing in an earlier session's entry) and none are new. `npm run build` not attempted, consistent with this project's established pattern (Google Fonts network-fetch failure in the sandbox, unrelated to any real change).
+
+Files written to the real local repo via the file bridge and **re-verified by re-staging and byte-for-byte diffing against the verified-in-clone copies** (per the recurring commit-reliability caveat logged earlier this session) — all three matched exactly. Not committed/pushed — no shell access to the local machine this session either. Suggested commit, for you to run yourself:
+
+```
+git add lib/tiers.ts app/api/checkout/newebpay/route.ts components/NewebpayCheckoutButton.tsx
+git commit -m "Add NewebPay checkout-initiation route and button (not yet wired into pricing page)"
+git push
+```
+
+(The separate, still-uncommitted `privacy/page.tsx` liability-clause trim from earlier this session is untouched by this — commit it separately, or together, your call.)
+
+## Correction: the Privacy Policy liability-clause trim IS now genuinely committed, pushed, and live — 2026-09-04, continued
+
+The entry above was wrong to call the trim "still-uncommitted." User reported the live site still showed the untrimmed §1 text, which kicked off a long, unnecessary diagnostic detour (racy-git stat-cache theory, assume-unchanged/skip-worktree checks, `git ls-files -v`, forced mtime touches) chasing a problem that no longer existed by the time it was investigated. The real explanation was simple and should have been checked first: commit `29153e6` ("Trim unlimited-personal-liability clause from Privacy Policy §1", 2026-09-04 17:08:43 +0800) was already pushed to GitHub. Every "no changes" result the user got back from `git status`/`git diff`/`git show HEAD:... | Select-String` during the detour was git correctly reporting nothing left to do — not evidence the commit had failed. Lesson for next time: when git reports no diff on a file that's supposed to have changed, check `git log -- <path>` for a commit that already did it before reaching for exotic explanations.
+
+Confirmed directly, not just inferred: a fresh `git clone` of the public repo shows commit `29153e6` with the trimmed content, and taiwanleads.com/privacy was loaded directly in a browser and shows the correct trimmed §1 (ends "...及本條款之契約當事人。" — no "並就本服務相關債務負無限個人責任，直至完成公司登記為止"). This is genuinely live, verified by direct observation of both the repo and the deployed page, not by repeating an earlier session's claim.
+
+## 藍新 (NewebPay) individual-merchant approval requires a functional, live site — 2026-09-04, continued
+
+Follow-up to Jason's registration walkthrough request. Directly confirmed
+via a live browser visit to newebpay.com/main/registration (not assumed):
+NewebPay's own 商店管理規範 (Store Management Regulations), which every
+applicant must scroll through and check "我同意" to before registering,
+states outright that "商店網站應揭露相關客服資訊且需與藍新商店客服資訊相符，
+如聯絡電話、電子信箱、LINE ID" — the customer-service contact info shown on
+the applicant's live website must match what's declared as the store's
+contact info inside NewebPay. This is a real, sourced requirement, not an
+inference.
+
+Separately, a secondary source (Teachify's own walkthrough of registering
+for 藍新's 信用卡定期定額 product, cross-checked via web search) states the
+applicant's site must already be built and functional **before** formal
+submission — real pricing, a real description of what's sold, visible
+customer-service contact info, a privacy policy, and critically: **no
+"測試"/placeholder/demo language anywhere on the site**, and the site's
+displayed name must exactly match whatever store name gets registered.
+This source is written for an online-course seller, not a B2B SaaS
+product like this one, so specifics like "at least one course must be
+live" don't transfer directly — but the general shape (real content, real
+policies, real contact info, no test language, name consistency) is a
+solid, cross-checked baseline.
+
+**Important distinction, to avoid a wrong turn:** "functional site" here
+means the site's *content and business legitimacy* — not that the
+NewebPay checkout button itself needs to be wired in before applying.
+That's actually impossible to do first: the checkout-initiation route
+(`app/api/checkout/newebpay/route.ts`) needs `NEWEBPAY_MERCHANT_ID`/
+`HASH_KEY`/`HASH_IV`, which only exist after NewebPay approves the
+account. Do not treat "make the site functional for review" as a reason
+to rush wiring NewebpayCheckoutButton into the pricing page — that step
+comes after approval, not before.
+
+**Where the live site currently stands against this bar:** taiwanleads.com
+already has a live pricing page, published Terms of Service and Privacy
+Policy, and a working payment flow via Paddle proving it's a real,
+functioning business — ahead of a typical fresh applicant. One concrete
+gap worth checking before applying: only an email (contact@taiwanleads.com)
+is displayed anywhere on the site today, no phone number. NewebPay's own
+rule above lists phone number alongside email as info that must stay
+consistent between the site and the NewebPay registration — this only
+matters if a phone number is provided at registration; if none is given,
+there's nothing to mismatch. Also worth a final pass before applying:
+confirm no "測試"/demo/placeholder wording remains anywhere on the live
+site.
+
+**Housekeeping note surfaced while auditing the repo this session:** this
+file (architecture.md) has been sitting uncommitted locally since before
+both the NewebPay checkout-route commit (`6f8e6cb`) and the Privacy-Policy
+§1-removal commit (`70854df`) landed on GitHub — a fresh clone of
+`origin/main` shows architecture.md still at 121,088 bytes (its state as
+of commit `bdb3caa`), while the local working copy is 132,230 bytes and
+already contains the NewebPay-build entries and the Privacy Policy
+correction entry above. Neither of those two commits' messages mention
+architecture.md, confirming they were made without it. Nothing is lost —
+the content exists locally — it just needs `git add architecture.md &&
+git commit -m "..." && git push` to actually reach GitHub, same as this
+new entry.
