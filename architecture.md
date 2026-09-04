@@ -1737,3 +1737,111 @@ company tiers), newebpay.com's news/documentation-update page for the
 信用卡定期定額 API, and site-now.app's 2026 NewebPay fee/rate
 comparison — none of this verified beyond what's publicly published.
 
+## Confirmed: Prospect Directory scraper stays paused — 2026-09-04, continued
+
+Directly asked and confirmed this session — previously only inferred
+(see the PDPA bullet above), never confirmed across several prior asks
+this same session. The user explicitly chose "still paused" when asked
+point-blank whether the lawyer's PDPA clearance covers the scraper.
+This closes that open question: it is no longer a working
+interpretation, it's a decision. Do not restart or plan the Prospect
+Directory scraper without a new, explicit clearance from the user citing
+an actual conversation with the lawyer about it specifically.
+
+
+## Terms of Service & Privacy Policy published live from legal-review-drafts-v4.docx — 2026-09-04, continued
+
+Following the lawyer clearance recorded in the Legal/tax research entry
+above ("Not yet actually made live in the app this session"), this
+session actually published the reviewed drafts. `legal-review-drafts-v4.docx`
+(repo root, gitignored, 17,689 bytes) is now live at
+taiwanleads.com/terms and taiwanleads.com/privacy.
+
+**Confirmation obtained before touching anything:** the user was asked
+directly, not inferred, whether this was the exact file the lawyer
+reviewed. She confirmed **"yes, this exact v4 file"** and that she
+**"approved it as-is, no changes"** — this despite the file's own header
+still reading "最後更新日期：2026年8月31日（草稿版本，尚未經律師審閱）",
+a stale label left over from before the lawyer conversation. Treated as
+confirmed by the user's words, not by the document's own internal label.
+
+**5-vs-7 highlight mismatch:** the docx's intro text claims 7
+yellow-highlighted "resolved" positions, but only 5 runs are actually
+highlighted yellow in the file. Flagged to the user, who confirmed
+proceeding with the 5 actually present: the Paddle Merchant-of-Record
+risk note, the 7-day cooling-off risk caveat, the PDPA Art.19/20
+marketing-export analysis (appears once in each of ToS §9 and Privacy
+§6), and the Art.222/17 liability-cap rationale.
+
+**Six factual blanks (【　　】) filled with values the user gave
+directly:**
+1. Service-provider name/identity (ToS §1, Privacy §1): **新公司快報**
+   — the user chose the brand name over a personal legal name, even
+   though the draft's own §1/§88 state the operator is an
+   unincorporated individual bearing unlimited personal liability. This
+   was explicitly flagged to her before she chose it; not a mistake,
+   just worth knowing ToS §1 now reads slightly redundantly ("「本服務」
+   ：指新公司快報...由新公司快報...提供").
+2. Contact channel (ToS §19, §21, Privacy §17): **contact@taiwanleads.com**
+   — a brand-new Zoho Mail address on the taiwanleads.com domain,
+   decided in this same conversation. See the separate blueprint-doc
+   addendum for that decision's own record.
+3. Jurisdiction court (ToS §20): **臺北地方法院**.
+
+**Fact-check against architecture.md's current state before publishing
+— all three conditional positions checked out consistent, no
+mismatches:**
+- Unincorporated/individual-operator status (ToS §1, Privacy §1) — still
+  true, consistent with "Incorporation: still fully open, user leaning
+  toward staying unincorporated." No rewrite needed.
+- Paddle named as the payment processor / third-party recipient (Privacy
+  §9, §10) — still accurate today. The 藍新/NewebPay switch above is a
+  decision, not yet built; Paddle checkout stays live in the meantime.
+  **This will need another Privacy Policy revision once NewebPay
+  actually replaces Paddle** (new third-party recipient in §9, new
+  cross-border transfer disclosure in §10) — not needed yet.
+- The PDPA legal-basis analysis (ToS §9, Privacy §6) is scoped only to
+  GCIS government-published company-registry data. It does **not**
+  cover, and must not be read as covering, the paused Prospect
+  Directory scraper (bookkeeper/CPA contact data) — consistent with
+  "PDPA cleared for current product only, Prospect Directory scraper
+  stays paused." No rewrite needed; just don't let anyone assume this
+  Privacy Policy already covers that feature if it ever launches.
+
+**Editorial judgment call:** lawyer-review meta-commentary embedded in
+the 5 highlighted paragraphs (sentences like "建議律師於正式發布前確認...")
+was edited out before publishing, keeping the substantive legal
+reasoning around it. Not explicitly requested by the user — worth
+knowing if anyone compares the live pages against the raw docx later and
+wonders why the wording doesn't match 1:1.
+
+**Build:** `app/(marketing)/terms/page.tsx` and
+`app/(marketing)/privacy/page.tsx` replaced the ~400-byte placeholder
+stubs with full structured content (21 ToS articles, 17 Privacy
+articles), built as data-driven React components styled to match the
+site's existing marketing pages (text-secondary / border-default /
+bg-card tokens, same heading and spacing scale as pricing/data-removal
+pages) — not a raw text dump. Both show 最後更新日期：2026年9月4日.
+
+**Verification:** built and checked in an isolated fresh clone of the
+public repo before touching the user's real files — `npm ci`,
+`npx next typegen` (needed to avoid the known fresh-clone-only
+`LayoutProps` false positive, same fix as the 2026-09-04 Pause/Resume
+entry above), `npx tsc --noEmit` (clean), `npx eslint` on the two
+changed files (clean, after catching and fixing a JSX-quoting bug in
+codegen). `npm run build` was attempted and fails only on a Google Fonts
+network-fetch error in the sandbox — unrelated to this change, consistent
+with this project's established pattern of verifying with tsc+lint
+rather than a full build in an isolated clone.
+
+No shell/device_bash tool was available on the local Windows machine
+this session — only the file bridge (list/stage/commit) — so the
+verified files were written into the real local repo via that bridge and
+the user ran the git commands herself: committed and pushed as
+**`bc88a8d`**, "Publish real Terms of Service and Privacy Policy from
+legal-review-drafts-v4.docx", on `main`.
+
+**Confirmed live, not assumed:** both taiwanleads.com/terms and
+taiwanleads.com/privacy were actually loaded and checked — they render
+the correct, complete content with the filled-in blanks and today's
+date.
