@@ -47,3 +47,12 @@ data/industry-csv/
 data/industry-csv-datasets-full.json
 data/industry-csv-oids.json
 data/industry-csv-refresh-failures.json
+
+# 2026-09-04: this repo is PUBLIC on GitHub. Business planning and legal
+# documents (blueprint drafts, legal review drafts) must never be
+# committed - a blanket *.docx exclusion so no future draft placed in
+# this folder gets swept up by a careless `git add .`, on top of the
+# two files that prompted this.
+*.docx
+legal-review-drafts-v4.docx
+tw-leads-radar-blueprint-updated-14 (2).docx
