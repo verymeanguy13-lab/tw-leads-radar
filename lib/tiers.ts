@@ -28,6 +28,22 @@ export const TIER_LIMITS: Record<Tier, TierLimits> = {
   business: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly", "daily"], csvExport: true },
 };
 
+// 2026-09-04: plain NT$ amounts for the paid tiers, added for the new
+// NewebPay checkout-initiation route (app/api/checkout/newebpay/route.ts)
+// — NewebPay's Period API needs a real TWD amount up front, unlike
+// Paddle, which only ever needed an opaque price ID configured in
+// Paddle's own dashboard. There was no single source of truth for these
+// amounts before now; they're copied from the display copy hard-coded in
+// app/(marketing)/pricing/page.tsx ("方案B"/NT$600/NT$6,000, "方案C"/
+// NT$1,300/NT$13,000). **This is a second place these numbers now live —
+// if pricing ever changes, this map must be updated by hand too**, the
+// same kind of two-places-to-update risk this file's own 2026-08-30
+// cadence-bug comment above already warns about.
+export const TIER_PRICING: Record<"pro" | "business", Record<"monthly" | "yearly", number>> = {
+  pro: { monthly: 600, yearly: 6000 },
+  business: { monthly: 1300, yearly: 13000 },
+};
+
 /**
  * Resolves a user's current tier from their subscription. Only an
  * `active` subscription grants paid-tier benefits - past_due, canceled,
