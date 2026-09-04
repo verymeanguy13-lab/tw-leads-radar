@@ -1523,3 +1523,162 @@ digest-watchdog work (previous session): a daily digest email did
 arrive that day. Full confirmation across daily/weekly/monthly cadences
 still needs another day or two of watching.
 
+## Pause/Resume feature for saved searches; Vercel cleanup — 2026-09-04
+
+Addressed the handoff's Group A (quick cleanup) and the "no way to
+un-pause a saved search" item from Group C.
+
+**Group A.** Deleted the dead `FACEBOOK_CLIENT_ID`/`FACEBOOK_CLIENT_SECRET`
+env vars from Vercel (unused anywhere in the code; no redeploy needed
+since nothing read them). The other Group A item — the "立即執行"
+zero-match wording — turned out to already be resolved: the fix
+described in the 2026-09-03 entry above (search history, "empty-search
+message fix") already covers exactly the residual redundancy this item
+described, and that entry already concludes it's low-priority cosmetic
+polish, not worth a wording-only patch without a real `last_matched_at`
+column. User confirmed: leave as-is, no code change made.
+
+**Pause/Resume feature.** The `saved_searches.paused` column has existed
+since Session 15 — `matchAllSearches()` and the digest emailer already
+skip paused searches, and the search list page already showed a "已暫停"
+badge — but a full search of the codebase turned up no code path
+anywhere that ever *set* `paused` to true or false, in either direction.
+It could only ever be flipped by hand-editing the database directly.
+The handoff's "no way to un-pause" framing undersold the actual gap:
+there was no way to pause a search either, from the UI or the API.
+
+Built and verified in an isolated clone (`npm ci` against the exact
+lockfile, then `npx tsc --noEmit` and `npm run lint` on the changed
+files — a fresh-clone-only false positive on `LayoutProps` in
+`app/layout.tsx` was resolved with `npx next typegen`, unrelated to this
+work; one pre-existing lint error in `app/(app)/searches/[id]/page.tsx`
+on an untouched `Date.now()` line was confirmed pre-existing on `main`
+via `git stash`, not introduced here):
+
+- `app/api/searches/[id]/route.ts` — new `PATCH` handler, body
+  `{ paused: boolean }` (explicit set, not a toggle), same
+  ownership/RLS pattern as the existing `DELETE` handler.
+- `components/PauseSearchButton.tsx` — new toggle button, same
+  disabled-while-in-flight / inline-error pattern as `RunNowButton.tsx`
+  and `DeleteSearchButton.tsx`.
+- Wired into both `app/(app)/searches/[id]/page.tsx` (detail page,
+  next to Run Now / Export / Delete) and `app/(app)/searches/page.tsx`
+  (list page, next to Delete) — the list page's existing query already
+  selected `paused`, so no query change was needed there.
+
+Committed and pushed as two commits: `129de93` ("Add Pause/Resume
+toggle for saved searches", detail page + API) and a follow-up commit
+("Add Pause/Resume button to the search list page too") after the user
+pointed out the list page — the one place users most naturally land —
+still only had Delete. Both verified live on GitHub after push. User
+visually confirmed the button appears on the search list page
+(screenshot).
+
+## Legal/tax research: PDPA status, payment processor choice, Taiwan tax thresholds — 2026-09-04
+
+User had already taken the queued legal questions to their lawyer since
+Session 29 and reported she "greenlighted everything." Follow-up
+established more precisely:
+
+- **PDPA (repackaging public GCIS data for lead-gen):** cleared, but per
+  the user's own words, "no more than what we have" — read as: the
+  *current* product's data usage is cleared, the Prospect Directory
+  scraper is NOT. This session stated that reading explicitly and asked
+  the user to confirm or correct it multiple times; the user never
+  directly confirmed or denied it in words, but also never corrected it
+  across several follow-up turns. Logging it as the working
+  interpretation, not a hard confirmation — **the Prospect Directory
+  scraper should remain paused** pending explicit confirmation, not
+  restarted on the strength of this session's read alone.
+- **Privacy Policy & Terms of Service:** user confirmed clearly (a plain
+  "yes") that the lawyer cleared the existing drafts to go live. **Not
+  yet actually made live in the app this session** — the current
+  `app/(marketing)/privacy/page.tsx` and `terms/page.tsx` are still
+  whatever placeholder/stub content they were before (each ~400 bytes,
+  not inspected in detail this session). Actually publishing the
+  reviewed drafts is unstarted work for a future session.
+- **Incorporation:** not part of what was asked to the lawyer. User is
+  leaning toward staying unincorporated for now. Still fully open.
+- **Paddle VAT/統一發票 mechanism:** researched (not asked to the
+  lawyer) — see below.
+
+**Payment processor research (Paddle vs 藍新/NewebPay), current as of
+this session's web searches:**
+
+- Paddle is a Merchant of Record. Its own docs confirm Taiwan is listed
+  as B2C-only at a flat 5% VAT rate, with no business-to-business
+  VAT-ID/reverse-charge mechanism for Taiwan (unlike the EU/UK) and no
+  mention anywhere of 統一編號/統一發票. The 統一編號 field added
+  2026-09-03 has no functional hook into Paddle regardless of how the
+  underlying legal question resolves. Paddle's business verification
+  explicitly does not require a registered business — "not required for
+  individuals or sole traders" — and is often near-instant, 2-4 business
+  days for manual review.
+- 藍新金流 (NewebPay) is a payment gateway, not a merchant of record —
+  the seller (not NewebPay) remains responsible for their own tax
+  obligations. Its 個人 (individual) tier needs only an ID number,
+  phone, and email to sign up (no 統一編號), with fast approval (one
+  documented case: submitted Friday, approved by Monday). It offers
+  電子發票 (e-invoice) issuance as an add-on, which could be a real path
+  to proper 統一發票 for Taiwan customers — **not confirmed** whether an
+  individual (non-registered) account can actually use that invoicing
+  feature, since 統一發票 issuance is normally tied to having a
+  統一編號. Individual accounts have a lower credit-card transaction cap
+  (NT$200,000) than company accounts (NT$600,000) — not confirmed
+  whether that's per-transaction or cumulative.
+- Net: approval speed/difficulty is not the real differentiator between
+  the two for an unincorporated individual — both accept one. The real
+  difference is 藍新 offers a possible path to real Taiwan invoicing and
+  local payment methods; Paddle offers zero Taiwan-specific compliance
+  help either way.
+
+**Taiwan tax thresholds researched, with sources (none of this verified
+against an accountant — all flagged to the user repeatedly as needing
+professional confirmation before being relied on):**
+
+- Small-scale business tax threshold (小規模營業人起徵點), effective
+  2025-01-01 per 財政部稅務入口網: **NT$50,000/month for services**
+  (NT$100,000/month for goods). Below this, no business/tax
+  registration (稅籍登記) or business tax (營業稅) is required. Above
+  it, registration is required "immediately," per the official
+  guidance — this is a different, lower figure than the
+  NT$480,000/year (~NT$40,000/month) threshold that applies specifically
+  to *foreign* electronic-service providers selling into Taiwan (e.g.
+  Netflix), which the user briefly conflated with their own situation
+  as a Taiwan-resident seller.
+- Separate rule since 2023 (稅籍登記規則 Art. 4-1): once registered,
+  business name + 統一編號 must be displayed on the sales site,
+  regardless of business scale.
+- **Business tax and individual income tax (綜合所得稅) are separate,
+  independent obligations** — confirmed via a Taiwan accounting firm's
+  2025-03-updated e-commerce tax Q&A, which states online sales income
+  must be "併計個人年度綜合所得總額，辦理結算申報" (combined into
+  annual comprehensive income and filed) regardless of whether the
+  business-tax threshold is crossed. Being under the NT$50,000/month
+  business-tax threshold does NOT mean personal income tax isn't owed
+  on that income.
+- General personal income tax exemption for 2026 filing: NT$101,000
+  免稅額 + NT$136,000 標準扣除額 (single, non-salary income) =
+  **NT$237,000/year** combined income with no tax owed. The commonly-cited
+  NT$464,000 figure adds an extra NT$227,000 salary-only special
+  deduction that most likely does not apply to business/self-employment
+  income. This threshold applies to **total income from all sources for
+  the year**, not to online-sales income in isolation.
+- Taiwan's 綜合所得稅 is a self-assessment system. The pre-filled/
+  pre-calculated return (稅額試算) only reflects income third parties
+  (employers, Taiwan-based payers) have already reported to the tax
+  bureau — it is not a check for whether income is taxable, and income
+  from a foreign payment processor would not automatically appear in
+  it.
+
+**Worth flagging for whoever picks this up next:** toward the end of
+this thread, the user asserted that not having hired a bookkeeper is
+itself proof of being under the income threshold, and that unreported
+online income would simply be billed by the government automatically
+each April. This session disagreed with both claims directly, citing
+the self-assessment-system finding above, and did not obtain the user's
+agreement. Recorded here factually so a future session has this context
+rather than re-deriving it from scratch — not to relitigate it
+unprompted, but to know it's already been raised once if it comes up
+again.
+
