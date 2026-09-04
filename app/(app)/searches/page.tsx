@@ -6,6 +6,7 @@ import { db, withUserContext } from "@/lib/db";
 import { getUserTier, canCreateSavedSearch } from "@/lib/tiers";
 import { formatDate } from "@/lib/utils";
 import DeleteSearchButton from "@/components/DeleteSearchButton";
+import PauseSearchButton from "@/components/PauseSearchButton";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,7 @@ export default async function SearchesListPage() {
                   {formatDate(s.created_at)}
                 </p>
               </Link>
+              <PauseSearchButton searchId={s.id} paused={s.paused} />
               <DeleteSearchButton searchId={s.id} searchName={s.name} />
             </li>
           ))}
