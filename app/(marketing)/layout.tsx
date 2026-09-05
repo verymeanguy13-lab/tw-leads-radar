@@ -46,10 +46,13 @@ export default async function MarketingLayout({ children }: { children: React.Re
         </div>
       </nav>
       <main className="flex-1">{children}</main>
-      <div className="border-t border-default px-8 py-4 flex gap-6 text-xs text-secondary">
-        <Link href="/privacy">{"隱私權政策"}</Link>
-        <Link href="/terms">{"服務條款"}</Link>
-      </div>
     </div>
   );
 }
+
+// 2026-09-05: removed this layout's own privacy/terms link bar - those
+// links are now in the global Footer (components/Footer.tsx, rendered
+// once from the root layout), which shows on every page including the
+// logged-in app section under app/(app)/ where these links previously
+// never appeared at all. Having both here and in the global Footer would
+// have just duplicated them on every marketing page.

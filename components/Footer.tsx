@@ -17,7 +17,13 @@ export default function Footer() {
   return (
     <footer className="border-t border-default mt-auto py-6 px-8">
       <DataAttribution datasets={ALL_SIX_DATASETS} />
-      <p className="text-xs text-secondary mt-3">
+      <p className="text-xs text-secondary mt-3 flex gap-4">
+        <Link href="/privacy" className="underline">
+          隱私權政策
+        </Link>
+        <Link href="/terms" className="underline">
+          服務條款
+        </Link>
         <Link href="/data-removal" className="underline">
           資料移除請求
         </Link>
