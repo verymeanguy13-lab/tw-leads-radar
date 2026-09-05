@@ -2056,3 +2056,56 @@ git add db/schema.sql scripts/migrate-add-prospect-contacts.ts scripts/scrape-bo
 git commit -m "Sessions 25-26 (Prospect Directory) + public masked search page"
 git push
 ```
+
+## Correction, same day: /search is tier-gated, and login/logout is now consistent everywhere — 2026-09-05
+
+You pushed back on the entry directly above this one, correctly: it built masking as an anonymous-only feature (mask everyone on `/search`, full stop), but what you actually asked for is tier-based — free-tier accounts (and anonymous visitors) see redacted results, paid accounts see complete results, on the same page. Also flagged separately: no consistent way to log in/out across the whole site, which you called out as making the site feel "unusable and incoherent." Both fixed:
+
+**`/search` is now tier-aware, not blanket-masked.** It checks the visitor's session the same way `lib/matching/engine.ts` and `/searches/[id]` already do (look up the user row by session email, call `getUserTier()`) and now branches on that:
+- Anonymous visitor or free-tier account: masked fields (統一編號/公司名稱/負責人, via `lib/masking.ts`) and the same 30-day freshness gate the free tier gets everywhere else.
+- Pro or business account: complete, unmasked fields, and no freshness restriction — same as their existing `/searches` experience.
+
+This only changes `/search`, the new ad hoc no-login page. It does not touch the saved-search feature (`/searches/[id]`, digest emails, CSV export) — those already have their own tier gating (freshness, cadence, `csvExport` flag) and weren't part of what you flagged as broken.
+
+**Login/logout is now one shared control, used everywhere.** The actual gap: `components/AppNav.tsx` (the logged-in app area's header) already had a working logout button, but `app/(marketing)/layout.tsx` — which wraps every marketing page: home, `/pricing`, `/search`, `/privacy`, `/terms` — never had one. A logged-in visitor on any of those pages had no way to log out without first clicking through into `/searches` to reach AppNav. Pulled the logout button out into `components/LogoutButton.tsx` (same `signOut()` + loading-state logic, just shared) and now both navs use it, so every single page on the site shows a working "登出" when you're logged in and a working "登入" when you're not — no more pages where one or the other is missing.
+
+**Verified:** same isolated-clone pipeline as every change this session (`npx next typegen`, `npx tsc --noEmit`, `npx eslint .`) — zero new errors; the same 10 pre-existing lint errors elsewhere in the repo (unrelated `any` types, a couple of React purity warnings) are untouched.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/search/page.tsx`, `app/(marketing)/layout.tsx`, `components/AppNav.tsx` (all three updated), `components/LogoutButton.tsx` (new).
+
+**Still not pushed.** Nothing from this session — Sessions 25-26, the original `/search` page, or this correction — is committed to git yet. Corrected, complete, PowerShell-safe command for literally everything currently sitting uncommitted in your working tree:
+
+```
+git add db/schema.sql scripts/migrate-add-prospect-contacts.ts scripts/scrape-bookkeepers.ts scripts/scrape-cpa-firms.ts lib/prospecting/ lib/masking.ts components/ProspectDoNotContactToggle.tsx components/AppNav.tsx components/LogoutButton.tsx architecture.md "app/(app)/admin/prospects/page.tsx" "app/api/admin/prospects/[id]/route.ts" "app/api/admin/prospects/export/route.ts" "app/(marketing)/search/page.tsx" "app/(marketing)/layout.tsx"
+git commit -m "Sessions 25-26 (Prospect Directory) + tier-gated public search + site-wide login/logout"
+git push
+```
+
+Once this is pushed and deployed, the live site should actually show the fix — until then, taiwanleads.com is still running whatever was last deployed, which is why testing against the live URL wouldn't have shown any of this working yet.
+
+## Rate limiting added to /search — 2026-09-05
+
+Following up on the gap flagged in this same day's earlier entries: `/search` had no rate limiting at all, only the 2-character minimum and 20-row cap. Added a real one.
+
+**`search_rate_limits` table** (db/schema.sql, migration in `scripts/migrate-add-search-rate-limits.ts`): one row per (`ip_hash`, `window_start`), incremented on every anonymous `/search` request. Stores a SHA-256 hash of the visitor's IP plus `NEXTAUTH_SECRET` as a pepper — never the raw IP, same "don't keep more than you need" instinct as the rest of this schema, and it means this table can't become its own PDPA question later.
+
+**Policy** (`lib/rate-limit.ts`): 30 requests per 10-minute fixed window per IP. Chosen as a reasonable starting point — permissive enough for a real visitor trying several searches, restrictive enough to slow down bulk scraping. Both numbers are named constants at the top of the file if they need adjusting later. Deliberately backed by Postgres, not an in-memory counter — this app runs as Vercel serverless functions, which don't share memory across instances, so an in-memory limiter would silently undercount and give false confidence. Reuses the existing DB rather than adding a new dependency like Upstash Redis.
+
+**Who it applies to:** only anonymous visitors. A logged-in user of any tier (free or paid) is exempt from the IP check — they're already accountable through their account, and the goal is to slow down anonymous scraping specifically, not to throttle a real customer testing searches. This required splitting the tier-check into a small `resolveViewerState()` helper (`{isLoggedIn, isPaid}`) in `app/(marketing)/search/page.tsx` so the page knows both facts, not just the tier.
+
+**Cleanup:** no separate cron job for this — on roughly 1 in 200 requests, the rate-limit check opportunistically deletes windows older than a day. Simple and sufficient at current volume; if `/search` traffic ever grows enough that this stops keeping the table small, a real scheduled cleanup (same pattern as `.github/workflows/cleanup-unverified-signups.yml`) is the next step, not a rewrite.
+
+**What happens when someone's rate-limited:** the search doesn't run at all — no query, no masked-or-unmasked rows — and the page shows a plain "查詢次數過多，請稍後再試" message with the actual wait time, plus a nudge that signing up removes the limit entirely (true, since logged-in visitors are exempt).
+
+**Verified:** same pipeline as every change today (`npx next typegen`, `npx tsc --noEmit`, `npx eslint .`) — clean, same 10 pre-existing unrelated errors as before, nothing new. Could not run this against a live database from this sandbox (same network restriction noted for the Prospect Directory scrapers) — the SQL was reviewed by hand for correctness but the actual `INSERT ... ON CONFLICT ... RETURNING` round-trip against real Postgres has not been executed. Run `npx tsx scripts/migrate-add-search-rate-limits.ts` once (needs `DATABASE_URL` set) before this matters in practice — the page won't error without it since Neon will just throw on the missing table, but it should be run before deploying this.
+
+**Already written to your real local repo and verified byte-for-byte:** `db/schema.sql` (new table appended), `scripts/migrate-add-search-rate-limits.ts` (new), `lib/rate-limit.ts` (new), `app/(marketing)/search/page.tsx` (updated to call it).
+
+**Still not pushed, and now also needs one migration run before it's live.** Once you push, remember to run the new migration against the real database too:
+
+```
+npx tsx scripts/migrate-add-search-rate-limits.ts
+git add db/schema.sql scripts/migrate-add-prospect-contacts.ts scripts/scrape-bookkeepers.ts scripts/scrape-cpa-firms.ts scripts/migrate-add-search-rate-limits.ts lib/prospecting/ lib/masking.ts lib/rate-limit.ts components/ProspectDoNotContactToggle.tsx components/AppNav.tsx components/LogoutButton.tsx architecture.md "app/(app)/admin/prospects/page.tsx" "app/api/admin/prospects/[id]/route.ts" "app/api/admin/prospects/export/route.ts" "app/(marketing)/search/page.tsx" "app/(marketing)/layout.tsx"
+git commit -m "Sessions 25-26 (Prospect Directory) + tier-gated public search + site-wide login/logout + search rate limiting"
+git push
+```

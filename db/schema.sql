@@ -278,3 +278,28 @@ CREATE INDEX IF NOT EXISTS idx_prospect_contacts_do_not_contact ON prospect_cont
 -- neondb_owner) same as every other app-accessed table, but gated at
 -- the app layer instead of a USING policy.
 GRANT SELECT, INSERT, UPDATE ON prospect_contacts TO app_user;
+
+-- Added 2026-09-05: rate limiting for the public, no-login /search page
+-- (app/(marketing)/search/page.tsx). That page has no account behind it
+-- to hold accountable, so an IP-based limit is the only practical
+-- control. Stores a SHA-256 hash of (client IP + NEXTAUTH_SECRET), never
+-- the raw IP — same "don't keep more than needed" instinct as everywhere
+-- else in this schema, and avoids this table becoming its own PDPA
+-- question. Counts are bucketed into fixed windows (ip_hash,
+-- window_start) so a request either lands in an existing bucket
+-- (increment) or starts a new one — see lib/rate-limit.ts for the actual
+-- window size and limit. Only ever written by anonymous /search
+-- requests — a logged-in visitor of any tier is already accountable via
+-- their account and is exempt (see that file's comment for why).
+CREATE TABLE IF NOT EXISTS search_rate_limits (
+    ip_hash TEXT NOT NULL,
+    window_start TIMESTAMPTZ NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (ip_hash, window_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_rate_limits_window_start ON search_rate_limits(window_start);
+
+-- No RLS — not user-owned data, gated at the app layer (lib/rate-limit.ts
+-- is the only code that ever touches this table).
+GRANT SELECT, INSERT, UPDATE, DELETE ON search_rate_limits TO app_user;

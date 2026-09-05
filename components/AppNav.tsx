@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
-import { useState } from "react";
+import LogoutButton from "./LogoutButton";
 
 // Shared header for the logged-in app area (/searches, /account, /admin/*).
 // Before this, these pages had no navigation between each other at all -
@@ -10,32 +9,22 @@ import { useState } from "react";
 // both, in one shared component so every page under app/(app)/ gets it
 // automatically via app/(app)/layout.tsx.
 //
-// signOut() from next-auth/react works without a <SessionProvider> - same
-// as signIn() already being called directly in app/(marketing)/signup's
-// SignupForm without one.
+// 2026-09-05: the actual signOut()-button logic moved into
+// components/LogoutButton.tsx so app/(marketing)/layout.tsx can use the
+// identical control - see that file's comment for why (a logged-in user
+// on a marketing page previously had no way to log out at all).
 
 export default function AppNav() {
-  const [signingOut, setSigningOut] = useState(false);
-
   return (
     <nav className="border-b border-default px-8 py-4 flex justify-between items-center">
       <Link href="/searches" className="font-bold text-lg">
         新公司快報
       </Link>
       <div className="flex gap-6 items-center text-sm">
+        <Link href="/search">免費查詢</Link>
         <Link href="/searches">已儲存搜尋</Link>
         <Link href="/account">帳戶</Link>
-        <button
-          type="button"
-          disabled={signingOut}
-          onClick={() => {
-            setSigningOut(true);
-            signOut({ callbackUrl: "/" });
-          }}
-          className="disabled:opacity-50"
-        >
-          {signingOut ? "登出中…" : "登出"}
-        </button>
+        <LogoutButton />
       </div>
     </nav>
   );
