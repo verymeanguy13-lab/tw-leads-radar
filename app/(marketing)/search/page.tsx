@@ -123,16 +123,33 @@ interface Filters {
 //      trigger on its own, same idea as a keyword or a checkbox - it's a
 //      deliberate ask to browse, not an accidentally-empty form
 //      submission, so it doesn't undermine the "never browse everything
-//      by accident" rule below. The industry/region/capital/entity-type
-//      filters are now behind a collapsed <details> ("進階篩選"),
-//      auto-expanded only when the page loads with one of those already
-//      set (e.g. a bookmarked or shared filtered URL) - the keyword box
-//      and the quick-start link are the only things visible by default.
-//      Also added a real-data stat line above the form (recent
-//      registration count, unmasked - it's an aggregate, not identifying
-//      information about any one company) since freshness is now
-//      something this page can honestly show off for every visitor, not
-//      just paid ones.
+//      by accident" rule below. Also added a real-data stat line above
+//      the form (recent registration count, unmasked - it's an
+//      aggregate, not identifying information about any one company)
+//      since freshness is now something this page can honestly show off
+//      for every visitor, not just paid ones.
+//
+//      The same pass first tried putting the industry/region/capital/
+//      entity-type filters behind a collapsed <details> ("進階篩選"),
+//      reasoning that a keyword box plus a quick-start link was a
+//      shorter path to a first result. The user reverted this
+//      immediately: being able to set full search conditions
+//      anonymously is the actual product she wants people to see and
+//      use first - collapsing it hid the main attraction behind an easy-
+//      to-miss toggle instead of reducing friction. All filters are
+//      always visible again, unconditionally, same as the original
+//      filter-parity version from point 3 above.
+//
+//   7. 2026-09-05, same day: added an actual marketing headline above
+//      the stat line, incorporating two of three taglines the user
+//      wanted worked in (the third, "搶先掌握新成立公司，比競爭對手更
+//      早接觸潛在客戶", already anchors the homepage's own hero - see
+//      app/(marketing)/page.tsx - and isn't repeated verbatim here to
+//      avoid two pages sharing an identical headline). The primary line
+//      leads with "可篩選" (filterable) on purpose: per point 6 above,
+//      the filter form itself - not just speed or freshness - is what
+//      the user considers this page's main attraction, so the headline
+//      names that mechanism rather than making a generic speed claim.
 //
 // Unchanged since earlier versions:
 //   - No saved_searches / search_matches read here - this function is a
@@ -271,14 +288,14 @@ export default async function PublicSearchPage({
   // see this file's header comment, point 6.
   const isLatestRequest = sp.latest === "1";
 
-  const hasAdvancedFilters =
+  const hasFilters =
+    isLatestRequest ||
+    filters.keyword.length >= 2 ||
     filters.regions.length > 0 ||
     filters.industryCodes.length > 0 ||
     filters.capitalMin !== null ||
     filters.capitalMax !== null ||
     filters.entityType !== "both";
-
-  const hasFilters = isLatestRequest || filters.keyword.length >= 2 || hasAdvancedFilters;
 
   const { isLoggedIn, isPaid } = await resolveViewerState();
   const recentCount = await getRecentRegistrationCount();
@@ -346,7 +363,20 @@ export default async function PublicSearchPage({
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
-      <h1 className="text-xl font-bold mb-2">查詢公司登記資料</h1>
+      {/* 2026-09-05: landing-page headline, incorporating the two
+          taglines the user asked to work in (a third, "搶先掌握新成立
+          公司，比競爭對手更早接觸潛在客戶", already anchors the
+          homepage's own hero - see app/(marketing)/page.tsx - so it's
+          not repeated verbatim here). The primary line leads with "可
+          篩選" (filterable) specifically because the filter form below
+          is the actual differentiator the user wants front and center,
+          not a generic speed claim. */}
+      <h1 className="text-2xl font-bold mb-2">
+        {"當同業還在手動查詢工商登記網站，你已經拿到可篩選的最新名單"}
+      </h1>
+      <p className="text-secondary mb-4">
+        {"新公司登記當下，就是你接觸的第一天——立即設定條件，搶先聯繫每一位新客戶。"}
+      </p>
 
       {/* 2026-09-05: a real, unmasked stat every visitor can see before
           doing anything - see this file's header comment, point 6. An
@@ -369,6 +399,8 @@ export default async function PublicSearchPage({
           {"即可看到完整資料。"}
         </p>
       )}
+
+      <h2 className="text-lg font-semibold mb-3">查詢公司登記資料</h2>
 
       <form method="get" className="space-y-4 mb-6 border-b border-default pb-6">
         <div className="flex flex-wrap items-end gap-3">
@@ -405,88 +437,81 @@ export default async function PublicSearchPage({
           </Link>
         </p>
 
-        <details open={hasAdvancedFilters}>
-          <summary className="text-sm text-secondary cursor-pointer select-none">
-            進階篩選（行業別、地區、資本額、公司／商業類型）
-          </summary>
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="block text-xs text-secondary mb-1">行業別</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-sm">
-                {INDUSTRY_CODES.map((ind) => (
-                  <label key={ind.code} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      name="industry_codes"
-                      value={ind.code}
-                      defaultChecked={filters.industryCodes.includes(ind.code)}
-                    />
-                    {ind.label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-secondary mb-1">地區</label>
-              <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-sm max-h-40 overflow-y-auto">
-                {REGIONS.map((r) => (
-                  <label key={r} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      name="regions"
-                      value={r}
-                      defaultChecked={filters.regions.includes(r)}
-                    />
-                    {r}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 max-w-sm">
-              <div>
-                <label className="block text-xs text-secondary mb-1">最低資本額</label>
+        <div>
+          <label className="block text-xs text-secondary mb-1">行業別</label>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-sm">
+            {INDUSTRY_CODES.map((ind) => (
+              <label key={ind.code} className="flex items-center gap-2">
                 <input
-                  type="number"
-                  min={0}
-                  name="capital_min"
-                  defaultValue={sp.capital_min ?? ""}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  style={{ borderColor: "var(--border)" }}
+                  type="checkbox"
+                  name="industry_codes"
+                  value={ind.code}
+                  defaultChecked={filters.industryCodes.includes(ind.code)}
                 />
-              </div>
-              <div>
-                <label className="block text-xs text-secondary mb-1">最高資本額</label>
-                <input
-                  type="number"
-                  min={0}
-                  name="capital_max"
-                  defaultValue={sp.capital_max ?? ""}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  style={{ borderColor: "var(--border)" }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-secondary mb-1">公司／商業類型</label>
-              <div className="flex gap-4 text-sm">
-                {ENTITY_TYPE_OPTIONS.map((opt) => (
-                  <label key={opt.value} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="entity_type"
-                      value={opt.value}
-                      defaultChecked={filters.entityType === opt.value}
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-            </div>
+                {ind.label}
+              </label>
+            ))}
           </div>
-        </details>
+        </div>
+
+        <div>
+          <label className="block text-xs text-secondary mb-1">地區</label>
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-sm max-h-40 overflow-y-auto">
+            {REGIONS.map((r) => (
+              <label key={r} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="regions"
+                  value={r}
+                  defaultChecked={filters.regions.includes(r)}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 max-w-sm">
+          <div>
+            <label className="block text-xs text-secondary mb-1">最低資本額</label>
+            <input
+              type="number"
+              min={0}
+              name="capital_min"
+              defaultValue={sp.capital_min ?? ""}
+              className="w-full border rounded px-3 py-2 text-sm"
+              style={{ borderColor: "var(--border)" }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-secondary mb-1">最高資本額</label>
+            <input
+              type="number"
+              min={0}
+              name="capital_max"
+              defaultValue={sp.capital_max ?? ""}
+              className="w-full border rounded px-3 py-2 text-sm"
+              style={{ borderColor: "var(--border)" }}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-secondary mb-1">公司／商業類型</label>
+          <div className="flex gap-4 text-sm">
+            {ENTITY_TYPE_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="entity_type"
+                  value={opt.value}
+                  defaultChecked={filters.entityType === opt.value}
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
       </form>
 
       {!hasFilters && (

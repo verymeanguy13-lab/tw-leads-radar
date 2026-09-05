@@ -2276,3 +2276,19 @@ git add "app/(marketing)/page.tsx" "app/(marketing)/search/page.tsx" architectur
 git commit -m "Fix homepage CTA to lead with /search; add quick-start link and live stat"
 git push
 ```
+
+## Reverted the collapsed "進階篩選" toggle; added a headline using the user's chosen taglines — 2026-09-05
+
+Immediate follow-up to the landing-page friction pass above. Sent a screenshot circling the new "進階篩選" collapse in red: "why is the anonymous condition setting searching gone? i want that. i think it's great... I don't want the part circled in red. it hides my main attraction and make it too subtle to find." The read on this: the earlier pass treated the five-field filter form as friction to be minimized (hidden behind a toggle so a first-time visitor could get to a result faster); the user's actual view is that anonymous, full condition-setting search **is** the product's main attraction and should be the first thing a visitor sees using, not something to click to reveal. Reverted immediately - all filters (行業別, 地區, 最低/最高資本額, 公司／商業類型) are unconditionally visible again, exactly as they were after the original filter-parity work, no `<details>` wrapper. The `?latest=1` quick-start link and the 7-day registration-count stat from the same pass were not objected to and are unchanged.
+
+Same message also asked to reconsider whether this page should be the landing page, this time supplying three specific taglines to work in: "搶先掌握新成立公司，比競爭對手更早接觸潛在客戶" (already the homepage's own hero headline - see the previous entry), "當同業還在手動查詢工商登記網站，你已經拿到可篩選的最新名單", and "新公司登記當下，就是你接觸的第一天" (the latter two were originally offered in conversation as original alternatives to a competitor's tagline, not copied from anywhere). Added an actual marketing headline to `/search` itself using the second and third lines - the primary `<h1>` leads with "可篩選" (filterable) specifically, naming the mechanism the user just confirmed is the real hook, with the third line as a supporting subhead underneath. The first tagline stays on the homepage only, so the two pages don't carry an identical headline. The old plain "查詢公司登記資料" heading is kept as a smaller `<h2>` directly above the form itself, functioning as a functional section label rather than the page's main headline.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint` on the touched file and a full `npx eslint .` - same 10 pre-existing unrelated errors, nothing new.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/search/page.tsx`.
+
+```
+git add "app/(marketing)/search/page.tsx" architecture.md
+git commit -m "Un-collapse search filters per feedback; add landing headline with chosen taglines"
+git push
+```
