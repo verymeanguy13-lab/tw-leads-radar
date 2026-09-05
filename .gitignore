@@ -56,3 +56,5 @@ data/industry-csv-refresh-failures.json
 *.docx
 legal-review-drafts-v4.docx
 tw-leads-radar-blueprint-updated-14 (2).docx
+
+Claude outputs/
