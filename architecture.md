@@ -2171,3 +2171,27 @@ git add "app/(marketing)/search/page.tsx" components/SaveSearchButton.tsx archit
 git commit -m "Full filter parity on /search + save-for-monthly-notifications bridge"
 git push
 ```
+
+## "查詢 does nothing" investigated — not a bug, but a real UX clarity gap, fixed — 2026-09-05
+
+Reported: searching `q=test`, 行業別=農、林、漁、牧業 (A), 地區=臺北市 on `/search` and clicking 查詢 appeared to do nothing.
+
+Checked this carefully rather than assuming either way. The query did run — the screenshot shows "找不到符合條件的公司。" at the bottom of the page, which is the correct zero-results state, not a broken button. The likely reason it's genuinely zero: "test" is a literal ASCII substring being matched against `name ILIKE '%test%'` on real Taiwan company names (which are Chinese), combined simultaneously with one specific industry category AND one specific city — three narrow conditions ANDed together. `runSearch()`'s query is byte-for-byte the same filter logic `lib/matching/engine.ts`'s `matchSearch()` already uses in production for real, working saved searches (industry overlap via `&&`, region via `= ANY(...)`, keyword via `ILIKE`) — not new, unproven logic. Also relevant: industry_codes' backfill completeness has a known, pre-existing gap noted elsewhere in this file (Session 20b) — not every company has a code populated — which narrows an industry-filtered search further. Nothing found in review suggests an actual bug in the query or its parameter binding.
+
+That said, the REAL problem is legitimate: a one-line, small, gray "找不到符合條件的公司" message below a button is easy to miss entirely, and looks indistinguishable from "the click did nothing" if you're not looking for it. Fixed the UX regardless of whether this specific case was a true bug:
+
+- The zero-results state is now a visible bordered box, not a single small line.
+- It echoes back exactly which filters were applied ("已套用篩選：行業別：農、林、漁、牧業、地區：臺北市、關鍵字「test」"), so it's unmistakable a real search ran against those exact conditions.
+- Adds a plain suggestion to loosen the filters.
+
+**If real companies still don't show up on a broader search** (e.g. just 臺北市 checked, no keyword, no industry), that would be a genuine signal of an actual bug worth digging into further — worth trying before assuming everything's fine. This entry doesn't rule that out; it explains why this *specific* reported combination was very likely to be a legitimate zero, and improves the page so the next zero-result case is unambiguous either way.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint .` — clean, same 10 pre-existing unrelated errors, nothing new.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/search/page.tsx`.
+
+```
+git add "app/(marketing)/search/page.tsx" architecture.md
+git commit -m "Make /search's zero-results state visible and echo the applied filters"
+git push
+```

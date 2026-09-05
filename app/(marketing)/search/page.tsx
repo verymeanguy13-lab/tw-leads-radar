@@ -259,6 +259,27 @@ export default async function PublicSearchPage({
     (filters.regions.length > 0 ? filters.regions.join("、") : "") ||
     `未命名搜尋 ${new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}`;
 
+  // Human-readable echo of whatever filters were actually applied, shown
+  // on a zero-result search so it's unmistakable the page ran a real
+  // query rather than appearing to do nothing - see that section's
+  // comment below for the report this addresses.
+  const appliedFilterParts: string[] = [];
+  if (filters.keyword.length >= 2) appliedFilterParts.push(`關鍵字「${filters.keyword}」`);
+  if (filters.industryCodes.length > 0) {
+    const labels = filters.industryCodes.map(
+      (code) => INDUSTRY_CODES.find((i) => i.code === code)?.label ?? code
+    );
+    appliedFilterParts.push(`行業別：${labels.join("、")}`);
+  }
+  if (filters.regions.length > 0) appliedFilterParts.push(`地區：${filters.regions.join("、")}`);
+  if (filters.capitalMin !== null) appliedFilterParts.push(`最低資本額 ${filters.capitalMin.toLocaleString()}`);
+  if (filters.capitalMax !== null) appliedFilterParts.push(`最高資本額 ${filters.capitalMax.toLocaleString()}`);
+  if (filters.entityType !== "both") {
+    const label = ENTITY_TYPE_OPTIONS.find((o) => o.value === filters.entityType)?.label;
+    if (label) appliedFilterParts.push(label);
+  }
+  const filterSummary = appliedFilterParts.join("、");
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <h1 className="text-xl font-bold mb-2">查詢公司登記資料</h1>
@@ -389,7 +410,25 @@ export default async function PublicSearchPage({
       )}
 
       {hasFilters && !rateLimited && results.length === 0 && (
-        <p className="text-sm text-secondary">找不到符合條件的公司。</p>
+        // 2026-09-05: this used to be one line of small gray text easy to
+        // miss below the button - a user reported "clicking 查詢 does
+        // nothing" when what actually happened was a real, correctly-
+        // executed search that legitimately matched zero companies (in
+        // the reported case: keyword "test" + one industry + one region
+        // all at once, which real Taiwan company data is very unlikely
+        // to satisfy simultaneously). The search was never broken; the
+        // empty state just didn't look like a response at all. Now it's
+        // a visible box that echoes back exactly what was searched, so
+        // it's unmistakable the page did something.
+        <div className="border rounded p-4" style={{ borderColor: "var(--border)" }}>
+          <p className="text-sm font-medium mb-1">找不到符合條件的公司</p>
+          {filterSummary && (
+            <p className="text-xs text-secondary">已套用篩選：{filterSummary}</p>
+          )}
+          <p className="text-xs text-secondary mt-2">
+            試試看放寬篩選條件——減少勾選的行業別或地區，或移除關鍵字。
+          </p>
+        </div>
       )}
 
       {hasFilters && !rateLimited && results.length > 0 && (
