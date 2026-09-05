@@ -228,3 +228,53 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON users, subscriptions, saved_searches, se
 GRANT SELECT ON companies TO app_user;
 GRANT SELECT, INSERT, UPDATE ON ingestion_runs TO app_user;
 GRANT SELECT, INSERT, UPDATE ON digest_runs TO app_user;
+
+-- Added 2026-09-05 (Sessions 25-26, blueprint Section 5): prospect_contacts
+-- — internal, admin-only outbound-sales data (記帳士/CPA firm contacts),
+-- not customer-owned. Per the blueprint's ★ standing principle, this is
+-- gated at the app layer (session email checked against ADMIN_EMAIL —
+-- see app/(app)/admin/prospects/page.tsx), the same pattern already used
+-- by /admin/ingestion and /admin/data-removal-requests. RLS is
+-- deliberately NOT enabled here: the users/subscriptions RLS pattern
+-- exists for per-customer isolation, and this table has no customer
+-- owner for it to isolate.
+--
+-- Deviation from the blueprint's literal column spec, worth flagging:
+-- the spec listed name/firm_name/region without NOT NULL. They're
+-- enforced NOT NULL here because they're also this table's UNIQUE key
+-- (used for idempotent upserts via ON CONFLICT) — Postgres treats every
+-- NULL in a UNIQUE constraint as distinct from every other NULL, so if
+-- any of these three were ever null, ON CONFLICT would silently stop
+-- matching existing rows and every re-run would insert duplicates
+-- instead of updating them. For a row with no individual person's name
+-- (an association-office row, or a CPA firm branch), `name` holds the
+-- association's or branch's own descriptive label instead of a blank —
+-- see scripts/scrape-bookkeepers.ts and scripts/scrape-cpa-firms.ts.
+CREATE TABLE IF NOT EXISTS prospect_contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contact_type VARCHAR(30) NOT NULL CHECK (contact_type IN ('bookkeeper', 'bookkeeper_association', 'cpa_firm')),
+    name TEXT NOT NULL,
+    firm_name TEXT NOT NULL,
+    region TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    website TEXT,
+    source_url TEXT NOT NULL,
+    source_association TEXT,
+    seed_source TEXT,
+    contact_method TEXT,
+    do_not_contact BOOLEAN NOT NULL DEFAULT FALSE,
+    outreach_status VARCHAR(20) NOT NULL CHECK (outreach_status IN ('not_contacted', 'contacted', 'replied', 'opted_out', 'converted')) DEFAULT 'not_contacted',
+    notes TEXT,
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(name, firm_name, region)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prospect_contacts_region ON prospect_contacts(region);
+CREATE INDEX IF NOT EXISTS idx_prospect_contacts_contact_type ON prospect_contacts(contact_type);
+CREATE INDEX IF NOT EXISTS idx_prospect_contacts_do_not_contact ON prospect_contacts(do_not_contact);
+
+-- No RLS policy — see comment above. Granted to app_user (not
+-- neondb_owner) same as every other app-accessed table, but gated at
+-- the app layer instead of a USING policy.
+GRANT SELECT, INSERT, UPDATE ON prospect_contacts TO app_user;
