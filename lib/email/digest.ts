@@ -2,6 +2,8 @@ import { Resend } from "resend";
 import { db } from "../db";
 import { formatCapital, formatDate } from "../utils";
 import { getUserTier } from "../tiers";
+import type { Cadence } from "../tiers";
+import { CADENCE_LOOKBACK_DAYS } from "../cadence";
 import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH } from "../attribution";
 import {
   maskUniformId,
@@ -259,14 +261,64 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   const tier = await getUserTier(search.userId);
   const isFreeTier = tier === "free";
 
+  // Cadence content window (2026-09-05, direct user instruction): a
+  // daily search's digest should only ever talk about the last ~2 days
+  // of new formations, weekly the last ~7, monthly the last ~30 - NOT
+  // "everything that's accumulated since surfaced_in_digest was last
+  // flipped," which is what this used to be (see the un-windowed query
+  // this replaced, still visible in git history). `now` is captured
+  // once here and reused both for the window boundary and for the `at`
+  // parameter on this email's CSV download link below, so the link
+  // always reproduces exactly what this specific send actually queried
+  // - not "whatever this search currently has" if someone clicks it
+  // later.
+  const now = new Date();
+  const lookbackDays =
+    CADENCE_LOOKBACK_DAYS[search.cadence as Cadence] ?? CADENCE_LOOKBACK_DAYS.monthly;
+  const windowStart = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+  const windowStartDate = windowStart.toISOString().slice(0, 10);
+  const windowEndDate = now.toISOString().slice(0, 10);
+
   const newMatches = await sql`
     SELECT c.*, sm.id AS match_id
     FROM search_matches sm
     JOIN companies c ON c.uniform_id = sm.company_uniform_id
     WHERE sm.saved_search_id = ${search.id} AND sm.surfaced_in_digest = false
       AND c.suppressed_at IS NULL
+      AND c.registration_date IS NOT NULL
+      AND c.registration_date >= ${windowStartDate}
+      AND c.registration_date <= ${windowEndDate}
     ORDER BY c.registration_date DESC NULLS LAST
   `;
+
+  // A match that's unsurfaced but already outside this cadence's own
+  // window (registered too long ago to fit a daily/weekly/monthly
+  // window, or missing a registration_date entirely) can never validly
+  // become "in window" on some later run either - a saved search has
+  // exactly one cadence, so waiting would just grow an invisible
+  // backlog forever. Mark these surfaced (without emailing them) in the
+  // same run that would otherwise have kept skipping them, regardless
+  // of whether this run ends up sending anything at all.
+  const staleMatchRows = await sql`
+    SELECT sm.id AS match_id
+    FROM search_matches sm
+    JOIN companies c ON c.uniform_id = sm.company_uniform_id
+    WHERE sm.saved_search_id = ${search.id} AND sm.surfaced_in_digest = false
+      AND c.suppressed_at IS NULL
+      AND (
+        c.registration_date IS NULL
+        OR c.registration_date < ${windowStartDate}
+        OR c.registration_date > ${windowEndDate}
+      )
+  `;
+  const staleMatchIds = (staleMatchRows as { match_id: string }[]).map((r) => r.match_id);
+  if (staleMatchIds.length > 0) {
+    await sql`
+      UPDATE search_matches
+      SET surfaced_in_digest = true, surfaced_at = now()
+      WHERE id = ANY(${staleMatchIds}::uuid[])
+    `;
+  }
 
   const changedMatches = await sql`
     SELECT c.*, sm.id AS match_id
@@ -344,9 +396,15 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
 
   const newOverflowCount = newRows.length - newRowsToRender.length;
   const changedOverflowCount = changedRows.length - changedRowsToRender.length;
+  // 2026-09-05: the CSV download link below (built from the same
+  // `newRows` this overflow count is derived from, not just the
+  // rendered/capped subset) already contains every row this note is
+  // telling the reader about, so it's pointed at that link instead of
+  // "請登入查看完整清單" - a recipient who wants the missing rows no
+  // longer has to log in for them, they can pull the CSV directly.
   const newOverflowNote =
     newOverflowCount > 0
-      ? `<p style="color:#6b7280;font-size:12px;margin-top:8px;">還有 ${newOverflowCount} 筆新符合結果未顯示，請登入查看完整清單。</p>`
+      ? `<p style="color:#6b7280;font-size:12px;margin-top:8px;">還有 ${newOverflowCount} 筆新符合結果未於此顯示，可透過下方 CSV 下載連結取得完整清單，或登入查看。</p>`
       : "";
   const changedOverflowNote =
     changedOverflowCount > 0
@@ -406,6 +464,29 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   // unauthenticated - see that route's own comment for why that's safe.
   const unsubscribeUrl = `${process.env.NEXTAUTH_URL}/api/searches/${search.id}/unsubscribe`;
 
+  // CSV download link (2026-09-05, direct user instruction): replaces
+  // the idea of attaching a CSV file to the email - an attachment goes
+  // through the same HTML-formatting risk the user was avoiding, and
+  // Resend has no clean way to attach a file whose content depends on
+  // per-recipient masking anyway. `at=${now...}` is the SAME `now` used
+  // to compute this send's own registration_date window above, so
+  // clicking this later always reproduces exactly what THIS email
+  // contained - not "whatever this search has accumulated by the time
+  // you click." Route: app/api/searches/[id]/digest-export/route.ts -
+  // deliberately unauthenticated (same trust model as the unsubscribe
+  // link above) and deliberately un-gated by tier: a free-tier
+  // recipient's CSV comes back masked exactly like their email rows
+  // did (never less masked than the email itself), a paid recipient's
+  // comes back unmasked - see that route's own header comment for the
+  // full reasoning.
+  const csvDownloadUrl = `${process.env.NEXTAUTH_URL}/api/searches/${
+    search.id
+  }/digest-export?at=${encodeURIComponent(now.toISOString())}`;
+  const csvLinkHtml =
+    newRows.length > 0
+      ? `<p style="font-size:13px;margin-top:12px;"><a href="${csvDownloadUrl}" style="color:#2563eb;">下載本次通知資料（CSV）</a></p>`
+      : "";
+
   // Free-tier upsell (2026-09-05): only shown when this email's rows
   // were actually masked - a paid recipient's email carries no mention
   // of upgrading, since there's nothing to upgrade away from.
@@ -418,6 +499,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       <h2 style="margin-bottom:4px;">「${search.name}」有 ${subjectSummary}</h2>
       <p style="color:#6b7280;font-size:13px;margin-top:0;">新公司快報</p>
       ${sectionsHtml}
+      ${csvLinkHtml}
       ${
         attributionHtml
           ? `<div style="color:#6b7280;font-size:12px;margin-top:16px;">${attributionHtml}</div>`

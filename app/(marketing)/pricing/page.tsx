@@ -59,7 +59,8 @@ export default async function PricingPage() {
             <li>{"\u2713 \u7d71\u4e00\u7de8\u865f\u3001\u516c\u53f8\u540d\u7a31\u8207\u8ca0\u8cac\u4eba\u59d3\u540d\u90e8\u5206\u906e\u853d"}</li>
             <li className="text-secondary">{"\u2022 \u7db2\u7ad9\u5167\u5efa\u5ee3\u544a"}</li>
             <li>{"\u2713 1 \u7d44\u5132\u5b58\u641c\u5c0b\u689d\u4ef6\uff08\u6bcf\u6708\u6458\u8981\uff09"}</li>
-            <li className="text-secondary">{"\u2717 \u4e0d\u652f\u63f4CSV\u532f\u51fa"}</li>
+            <li>{"\u2713 \u6bcf\u5c01\u901a\u77e5\u9644\u906e\u853d\u7248CSV\u4e0b\u8f09\u9023\u7d50"}</li>
+            <li className="text-secondary">{"\u2717 \u4e0d\u652f\u63f4\u5b8c\u6574\uff08\u672a\u906e\u853d\uff09CSV\u532f\u51fa"}</li>
           </ul>
           <Link href="/login" className="block text-center border border-default rounded px-4 py-2">
             {"\u958b\u59cb\u4f7f\u7528"}

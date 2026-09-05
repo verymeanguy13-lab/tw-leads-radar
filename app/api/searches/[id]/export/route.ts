@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db, withUserContext } from "@/lib/db";
 import { canExportCsv } from "@/lib/tiers";
-import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH as DATASET_NAME_ZH } from "@/lib/attribution";
+import { buildMatchesCsv, safeCsvFilename } from "@/lib/csv-export";
 import type { Company } from "@/types/db";
 
 // Session 20 — CSV Export
@@ -20,22 +20,14 @@ import type { Company } from "@/types/db";
 // Attribution constants now shared via lib/attribution.ts (previously
 // duplicated locally here and in the results page, with different
 // names for the same mapping - consolidated 2026-08-30).
-
-const STATUS_LABEL: Record<string, string> = {
-  active: "營運中",
-  changed: "已異動",
-  dissolved: "已解散",
-  suspended: "停業中",
-};
-
-function csvEscape(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return "";
-  const str = String(value);
-  if (/[",\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
+//
+// 2026-09-05: the actual CSV-building (columns, escaping, attribution
+// lines, BOM) moved to lib/csv-export.ts's buildMatchesCsv(), shared
+// with the new app/api/searches/[id]/digest-export/route.ts (the
+// per-notification CSV download link in digest emails). This route's
+// own behavior is unchanged by that extraction - still paid-only
+// (canExportCsv gate below), still unmasked, still every match this
+// search has ever produced, not windowed to any date range.
 
 export async function GET(
   req: NextRequest,
@@ -122,66 +114,9 @@ export async function GET(
     }
   }
 
-  // Attribution scoped to only the datasets actually represented in this
-  // export — same source of truth and wording as DataAttribution.tsx,
-  // reimplemented as plain CSV comment lines since that component
-  // renders JSX, not text.
-  const displayedDatasetIds = Array.from(
-    new Set(matches.map((r) => r.source_dataset).filter((d): d is string => !!d))
-  );
-  const attributionLines = displayedDatasetIds
-    .filter((dsId) => DATASET_NAME_ZH[dsId])
-    .map(
-      (dsId) =>
-        `# 提供機關／${ATTRIBUTION_AGENCY} ${new Date().getFullYear()} ${DATASET_NAME_ZH[dsId]}，依政府資料開放授權條款進行公開徵集及加值利用`
-    );
+  const csvBody = buildMatchesCsv(matches, { datasetFreshness });
 
-  const headerRow = [
-    "統一編號",
-    "類型",
-    "名稱",
-    "登記日期",
-    "縣市",
-    "鄉鎮市區",
-    "地址",
-    "負責人",
-    "資本額",
-    "狀態",
-    "狀態資料更新於",
-  ].join(",");
-
-  const lines: string[] = [...attributionLines, headerRow];
-
-  for (const row of matches) {
-    const isDissolvedOrSuspended = row.status === "dissolved" || row.status === "suspended";
-    const freshAt =
-      isDissolvedOrSuspended && row.source_dataset
-        ? datasetFreshness.get(row.source_dataset)
-        : undefined;
-
-    lines.push(
-      [
-        csvEscape(row.uniform_id),
-        csvEscape(row.entity_type),
-        csvEscape(row.name),
-        csvEscape(row.registration_date),
-        csvEscape(row.address_region),
-        csvEscape(row.address_district),
-        csvEscape(row.address_raw),
-        csvEscape(row.responsible_person),
-        csvEscape(row.capital),
-        csvEscape(STATUS_LABEL[row.status] ?? row.status),
-        csvEscape(freshAt ? new Date(freshAt).toISOString().slice(0, 10) : ""),
-      ].join(",")
-    );
-  }
-
-  // Leading BOM so Excel renders the Chinese text correctly on open — a
-  // CSV *content* concern, separate from Section 3.2's rule against BOMs
-  // in source code files.
-  const csvBody = "\uFEFF" + lines.join("\r\n") + "\r\n";
-
-  const safeName = (savedSearch.name || "export").replace(/[^a-zA-Z0-9-_]/g, "_");
+  const safeName = safeCsvFilename(savedSearch.name as string);
 
   return new NextResponse(csvBody, {
     status: 200,
