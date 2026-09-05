@@ -2,8 +2,30 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import CheckoutButton from "@/components/CheckoutButton";
+import NewebpayCheckoutButton from "@/components/NewebpayCheckoutButton";
 import type { Metadata } from "next";
+
+// 2026-09-05: checkout switched from Paddle's CheckoutButton to
+// NewebpayCheckoutButton, on the user's explicit instruction to hide
+// Paddle from the site's surface and put 藍新 (NewebPay) in its place,
+// rather than ripping Paddle out of the codebase (it's still used
+// elsewhere - see app/api/account/cancel/route.ts and
+// app/api/account/route.ts, both now updated to handle either
+// processor). CheckoutButton.tsx/lib/paddle-api.ts are untouched and
+// still fully functional - they're just no longer reachable from this
+// page.
+//
+// REAL, IMMEDIATE CONSEQUENCE, stated plainly because it's easy to miss
+// from the diff alone: NEWEBPAY_MERCHANT_ID/HASH_KEY/HASH_IV are not set
+// (no 藍新 merchant account exists yet - applying for one requires this
+// site to already look fully live first, a separate open item). Until
+// those exist, every click of the buttons below will fail gracefully
+// with "NewebPay 尚未設定完成，目前無法使用此付款方式" (the 503 path
+// app/api/checkout/newebpay/route.ts already returns) rather than
+// crashing - but that means NO ONE CAN ACTUALLY SUBSCRIBE to Plan B or C
+// right now. This is the tradeoff the user explicitly chose over leaving
+// Paddle live in the meantime - see architecture.md's 2026-09-05 "hide
+// Paddle from the surface" entry.
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +64,7 @@ export default async function PricingPage() {
           <Link href="/login" className="block text-center border border-default rounded px-4 py-2">
             {"\u958b\u59cb\u4f7f\u7528"}
           </Link>
+          <p className="text-xs text-secondary text-center mt-2">{"\u4e0d\u9700\u4fe1\u7528\u5361"}</p>
         </div>
 
         <div className="border border-default rounded-lg p-6 bg-card">
@@ -57,13 +80,11 @@ export default async function PricingPage() {
             <li>{"\u2713 \u6bcf\u9031\u96fb\u5b50\u90f5\u4ef6\u6458\u8981"}</li>
             <li>{"\u2713 CSV\u532f\u51fa"}</li>
           </ul>
-          <CheckoutButton
-            monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_MONTHLY || ""}
-            yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_YEARLY || ""}
+          <NewebpayCheckoutButton
+            tier="pro"
             label={"\u958b\u59cb\u4f7f\u7528"}
             className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
             userId={userId}
-            userEmail={userEmail}
           />
         </div>
 
@@ -81,15 +102,42 @@ export default async function PricingPage() {
             <li>{"\u2713 CSV\u532f\u51fa"}</li>
             <li>{"\u2713 API\u5b58\u53d6\uff08\u898f\u5283\u4e2d\uff09"}</li>
           </ul>
-          <CheckoutButton
-            monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_MONTHLY || ""}
-            yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_YEARLY || ""}
+          <NewebpayCheckoutButton
+            tier="business"
             label={"\u958b\u59cb\u4f7f\u7528"}
             className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
             userId={userId}
-            userEmail={userEmail}
           />
         </div>
+      </div>
+
+      {/* 2026-09-05: trust-signal row, originally added when checkout was
+          still Paddle. Both claims still hold true now that checkout is
+          NewebpayCheckoutButton above:
+          - "\u514d\u8cbb\u65b9\u6848\u4e0d\u9700\u4fe1\u7528\u5361" is true unconditionally - Plan A's CTA is a
+            plain /login link, no checkout component at all, no card ever
+            asked for.
+          - "\u96a8\u6642\u53d6\u6d88" is honored for both processors: Paddle via
+            cancelPaddleSubscription() (unchanged), NewebPay via the new
+            alterNewebpayPeriodStatus() branch added to
+            app/api/account/cancel/route.ts alongside this same checkout
+            switch. Access continues until the already-paid period ends
+            either way - see lib/tiers.ts's getUserTier(), updated the
+            same day to check current_period_end instead of relying on a
+            NewebPay-side event that doesn't exist to flip `status` the
+            way Paddle's webhook does.
+          NOTE on card-free paid plans: monthly billing (either tier) is
+          still credit-card-only - \u85cd\u65b0's recurring product (\u4fe1\u7528\u5361\u5b9a\u671f\u5b9a\u984d)
+          has the same constraint Paddle does, see architecture.md's
+          2026-09-05 "correction" entry. Yearly billing is different as
+          of the same day: NewebpayCheckoutButton's yearly option now
+          goes through a one-time checkout (lib/newebpay-api.ts's
+          buildCreateMpgOrderRequest()) that genuinely offers ATM
+          transfer / \u8d85\u5546\u4ee3\u78bc alongside card, with no auto-renewal - see
+          that function's own header comment. */}
+      <div className="flex flex-col sm:flex-row justify-center gap-2 sm:gap-8 text-sm text-secondary text-center mt-8">
+        <p>{"\u2713 \u514d\u8cbb\u65b9\u6848\u4e0d\u9700\u4fe1\u7528\u5361"}</p>
+        <p>{"\u2713 \u4ed8\u8cbb\u65b9\u6848\u53ef\u96a8\u6642\u53d6\u6d88\uff0c\u670d\u52d9\u5c07\u6301\u7e8c\u81f3\u7576\u671f\u5df2\u4ed8\u8cbb\u9031\u671f\u7d50\u675f"}</p>
       </div>
 
       <p className="text-xs text-secondary text-center mt-10 max-w-xl mx-auto">

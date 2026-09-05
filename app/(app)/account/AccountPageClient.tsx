@@ -1,30 +1,51 @@
 "use client";
 import { useEffect, useState } from "react";
-import CheckoutButton from "@/components/CheckoutButton";
+import NewebpayCheckoutButton from "@/components/NewebpayCheckoutButton";
 
 // Session 21 — Account & Billing Settings.
 //
-// Receives userId/userEmail as props from the server component
-// (page.tsx) rather than calling next-auth/react's useSession() —
-// this app has no <SessionProvider> anywhere, matching the same
-// approach app/(marketing)/pricing/page.tsx already uses for
-// CheckoutButton.
+// Receives userId as a prop from the server component (page.tsx) rather
+// than calling next-auth/react's useSession() — this app has no
+// <SessionProvider> anywhere, matching the same approach
+// app/(marketing)/pricing/page.tsx already uses. (userEmail was also
+// passed here until 2026-09-05 - only needed for Paddle's Checkout.open()
+// prefill, which NewebpayCheckoutButton has no equivalent of - removed
+// from both this component and page.tsx alongside the checkout switch.)
+//
+// 2026-09-05: the free-tier "升級方案" checkout buttons below switched
+// from Paddle's CheckoutButton to NewebpayCheckoutButton, alongside the
+// same swap on app/(marketing)/pricing/page.tsx (see that file's own
+// comment for why and its real, immediate consequence: no one can
+// actually complete checkout until a real 藍新 merchant account exists).
+// The "降級至方案 B"/"升級至方案 C" buttons further down and the
+// "更新付款方式" link are UNCHANGED and still Paddle-only (change-plan
+// and update-payment-method have no NewebPay equivalent built) - they
+// only ever render for an existing paid subscriber (`info.tier !==
+// "free"`), which today can only mean a legacy Paddle subscriber, since
+// the only reachable new-purchase path is NewebPay now.
 //
 // Known limitation, not built in this session: there's no "undo
 // cancellation" button. Once someone cancels (scheduled for period
 // end), this page just shows that it's scheduled — resuming a
-// Paddle Billing subscription that has a pending cancellation isn't a
-// well-documented, verified-safe API call the way cancel/change-plan
-// are, so rather than guess at it for real payment infrastructure, it
-// was left out. If someone changes their mind before the period ends,
-// they'd need to contact support for now, or simply re-subscribe via
-// checkout once the old subscription actually lapses.
+// subscription with a pending cancellation isn't a well-documented,
+// verified-safe API call for either processor, so rather than guess at
+// it for real payment infrastructure, it was left out. If someone
+// changes their mind before the period ends, they'd need to contact
+// support for now, or simply re-subscribe via checkout once the old
+// subscription actually lapses.
 
 interface AccountInfo {
   tier: "free" | "pro" | "business";
   status: string | null;
   currentPeriodEnd: string | null;
   scheduledCancellation: boolean;
+  // 2026-09-05: false only for a one-time yearly purchase (the new MPG/
+  // ATM-CVS checkout - see app/api/checkout/newebpay-yearly/route.ts).
+  // There's no recurring commitment behind it, so no cancel button, no
+  // change-plan options, and no "next billing date" - just a plain
+  // expiry. True for every other paid case (Paddle and NewebPay-monthly
+  // both auto-renew).
+  autoRenew: boolean;
   updatePaymentMethodUrl: string | null;
   paddleUnreachable?: boolean;
   vatId: string | null;
@@ -32,7 +53,6 @@ interface AccountInfo {
 
 interface Props {
   userId: string | null;
-  userEmail: string | null;
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -46,7 +66,7 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("zh-TW", { year: "numeric", month: "long", day: "numeric" });
 }
 
-export default function AccountPageClient({ userId, userEmail }: Props) {
+export default function AccountPageClient({ userId }: Props) {
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionPending, setActionPending] = useState(false);
@@ -162,7 +182,9 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
         {info.tier !== "free" && (
           <>
             <p className="text-sm text-secondary">
-              {info.scheduledCancellation
+              {!info.autoRenew
+                ? "\u670d\u52d9\u6709\u6548\u81f3\u4ee5\u4e0b\u65e5\u671f\uff0c\u5c46\u6eff\u5f8c\u5c07\u81ea\u52d5\u8f49\u70ba\u514d\u8cbb\u65b9\u6848\uff08\u4e0d\u6703\u81ea\u52d5\u7e8c\u7d04\uff09\uff1a"
+                : info.scheduledCancellation
                 ? "\u8a02\u95b1\u5c07\u65bc\u4ee5\u4e0b\u65e5\u671f\u7d50\u675f\uff0c\u4e0d\u6703\u81ea\u52d5\u7e8c\u7d04\uff1a"
                 : "\u4e0b\u6b21\u7e8c\u8cbb\u65e5\u671f\uff1a"}
               {" "}
@@ -212,27 +234,23 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
         <div className="border border-default rounded-lg p-6 mb-6">
           <p className="font-semibold mb-4">{"\u5347\u7d1a\u65b9\u6848"}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <CheckoutButton
-              monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_MONTHLY || ""}
-              yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_B_YEARLY || ""}
+            <NewebpayCheckoutButton
+              tier="pro"
               label={"\u5347\u7d1a\u81f3\u65b9\u6848 B"}
               className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
               userId={userId}
-              userEmail={userEmail}
             />
-            <CheckoutButton
-              monthlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_MONTHLY || ""}
-              yearlyPriceId={process.env.NEXT_PUBLIC_PADDLE_PRICE_C_YEARLY || ""}
+            <NewebpayCheckoutButton
+              tier="business"
               label={"\u5347\u7d1a\u81f3\u65b9\u6848 C"}
               className="block w-full text-center bg-[var(--accent)] text-white rounded px-4 py-2 font-medium disabled:opacity-50"
               userId={userId}
-              userEmail={userEmail}
             />
           </div>
         </div>
       )}
 
-      {info.tier === "pro" && !info.scheduledCancellation && (
+      {info.tier === "pro" && info.autoRenew && !info.scheduledCancellation && (
         <div className="border border-default rounded-lg p-6 mb-6">
           <button
             type="button"
@@ -245,7 +263,7 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
         </div>
       )}
 
-      {info.tier === "business" && !info.scheduledCancellation && (
+      {info.tier === "business" && info.autoRenew && !info.scheduledCancellation && (
         <div className="border border-default rounded-lg p-6 mb-6">
           <button
             type="button"
@@ -258,7 +276,18 @@ export default function AccountPageClient({ userId, userEmail }: Props) {
         </div>
       )}
 
-      {info.tier !== "free" && (
+      {info.tier !== "free" && !info.autoRenew && (
+        // One-time yearly purchase (MPG/ATM-CVS checkout) - no recurring
+        // commitment, so no cancel button and no payment-method link.
+        // The expiry itself is already shown in the plan card above.
+        <div className="border border-default rounded-lg p-6">
+          <p className="text-sm text-secondary">
+            {"\u6b64\u65b9\u6848\u70ba\u5e74\u7e73\u4e00\u6b21\u6027\u4ed8\u6b3e\uff0c\u5230\u671f\u5f8c\u5c07\u81ea\u52d5\u8f49\u70ba\u514d\u8cbb\u65b9\u6848\u3002\u82e5\u8981\u7e7c\u7e8c\u4f7f\u7528\u4ed8\u8cbb\u529f\u80fd\uff0c\u8acb\u65bc\u5230\u671f\u524d\u91cd\u65b0\u8cfc\u8cb7\u3002"}
+          </p>
+        </div>
+      )}
+
+      {info.tier !== "free" && info.autoRenew && (
         <div className="border border-default rounded-lg p-6 space-y-3">
           {info.updatePaymentMethodUrl && (
             <a

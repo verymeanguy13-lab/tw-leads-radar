@@ -14,14 +14,21 @@ import crypto from "crypto";
 // newebpay_pending_orders, so the webhook had nothing to match incoming
 // notifies against.
 //
-// **Not wired into any live page yet, by design.** This route and its
-// matching client component (components/NewebpayCheckoutButton.tsx) are
-// real, callable code, but nothing currently imports the button into
-// app/(marketing)/pricing/page.tsx. Per the standing 2026-09-04 decision,
-// hiding/replacing the Paddle checkout flow is deferred until the whole
-// NewebPay loop is built AND verified against a real sandbox account —
-// see architecture.md's to-do list. Wiring this in is a later, deliberate
-// step, not an oversight.
+// 2026-09-05: this route now handles MONTHLY only. Yearly moved to a
+// separate one-time checkout (app/api/checkout/newebpay-yearly/route.ts,
+// lib/newebpay-api.ts's buildCreateMpgOrderRequest()) once the user
+// clarified she wants yearly billed as a single upfront payment so ATM
+// transfer / 超商代碼 genuinely work (they're one-time payment methods -
+// see architecture.md's 2026-09-05 "correction" entry for why they can't
+// power a recurring Period charge the way this route's monthly flow
+// needs). Kept this route itself otherwise unchanged rather than
+// generalizing it, since Period and MPG are different NewebPay products
+// with different request shapes, not two modes of the same one.
+//
+// Wired into app/(marketing)/pricing/page.tsx and
+// app/(app)/account/AccountPageClient.tsx's checkout buttons as of
+// 2026-09-05 (see NewebpayCheckoutButton.tsx, which now calls this route
+// for "monthly" and the yearly route for "yearly").
 //
 // **Cannot be tested end-to-end yet.** NEWEBPAY_MERCHANT_ID/HASH_KEY/
 // HASH_IV are still unset — no merchant account exists as of this
@@ -68,10 +75,17 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const tier = body?.tier as "pro" | "business" | undefined;
-  const cadence = body?.cadence as "monthly" | "yearly" | undefined;
+  const cadence = body?.cadence as "monthly" | undefined;
 
-  if (!tier || !cadence || !TIER_PRICING[tier]?.[cadence]) {
-    return NextResponse.json({ error: "tier and cadence are required" }, { status: 400 });
+  if (!tier || cadence !== "monthly" || !TIER_PRICING[tier]?.monthly) {
+    // "yearly" deliberately rejected here, not silently accepted — see
+    // this route's 2026-09-05 header comment. A client sending "yearly"
+    // to this route is a bug (should be calling newebpay-yearly instead),
+    // not a valid request this route should try to honor.
+    return NextResponse.json(
+      { error: "tier and cadence (monthly) are required" },
+      { status: 400 }
+    );
   }
 
   const sql = db();
@@ -98,37 +112,36 @@ export async function POST(req: Request) {
     );
   }
 
-  const periodAmt = TIER_PRICING[tier][cadence];
+  const periodAmt = TIER_PRICING[tier].monthly;
   const merchantOrderNo = generateMerchantOrderNo();
 
   // 2026-09-04: periodPoint's exact expected format/encoding is NOT
   // confirmed against NewebPay's real spec — lib/newebpay-api.ts's own
   // CreatePeriodOrderParams comment already flags this. This follows the
   // most commonly documented convention across independent NewebPay
-  // integration write-ups (day-of-month, zero-padded, for M; MMDD for Y)
-  // but has never been tested against a live or sandbox NewebPay
-  // endpoint. Re-verify against the actual current PDF (NDNP-1.0.6), or
-  // a sandbox test, before trusting this in production.
+  // integration write-ups (day-of-month, zero-padded) but has never been
+  // tested against a live or sandbox NewebPay endpoint. Re-verify against
+  // the actual current PDF (NDNP-1.0.6), or a sandbox test, before
+  // trusting this in production.
+  //
+  // 2026-09-05: this route only ever builds a "M" (monthly) order now -
+  // the "Y" (yearly) branch that used to live here was removed when
+  // yearly moved to the one-time MPG checkout (newebpay-yearly route),
+  // not because Period's own "Y" option stopped existing, but because
+  // this product no longer uses it (see this file's header comment).
   const now = new Date();
-  let periodType: PeriodType;
-  let periodPoint: string;
-  if (cadence === "monthly") {
-    periodType = "M";
-    periodPoint = String(now.getDate()).padStart(2, "0");
-  } else {
-    periodType = "Y";
-    periodPoint = `${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  }
+  const periodType: PeriodType = "M";
+  const periodPoint = String(now.getDate()).padStart(2, "0");
 
   // NewebPay's Period API requires an explicit, bounded cycle count (max
   // 99 per the field spec) — unlike Paddle, there is no "run
   // indefinitely until canceled" option. 99 is the maximum allowed, used
   // here to approximate an open-ended subscription (99 cycles ≈ 8.25
-  // years for monthly, 99 years for yearly). **Real, unbuilt gap**: when
-  // a commitment's cycles run out, NewebPay simply stops charging —
-  // nothing in this codebase yet detects that or creates a fresh Period
-  // commitment to continue billing past cycle 99. Flagging this now so
-  // it isn't rediscovered as a surprise years from now.
+  // years for monthly). **Real, unbuilt gap**: when a commitment's
+  // cycles run out, NewebPay simply stops charging — nothing in this
+  // codebase yet detects that or creates a fresh Period commitment to
+  // continue billing past cycle 99. Flagging this now so it isn't
+  // rediscovered as a surprise years from now.
   const periodTimes = 99;
 
   let order: { url: string; postData: string; merchantId: string };
@@ -140,7 +153,7 @@ export async function POST(req: Request) {
       periodPoint,
       periodTimes,
       payerEmail: session.user.email,
-      prodDesc: `${TIER_LABELS[tier]} (${cadence === "monthly" ? "Monthly" : "Yearly"})`,
+      prodDesc: `${TIER_LABELS[tier]} (Monthly)`,
       returnUrl: `${process.env.NEXTAUTH_URL}/account?newebpay=return`,
       notifyUrl: `${process.env.NEXTAUTH_URL}/api/webhooks/newebpay`,
     });

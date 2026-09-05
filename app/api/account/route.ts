@@ -11,6 +11,35 @@ import { NextResponse } from "next/server";
 // here, since we call Paddle's cancel API directly with an explicit
 // effective_from rather than relying on the hosted portal's default —
 // see lib/paddle-api.ts's comment on cancelPaddleSubscription().
+//
+// 2026-09-05: also recognizes newebpay_period_no, added once
+// app/(marketing)/pricing/page.tsx's checkout button was switched from
+// Paddle to NewebPay. Before this change, the `if (!sub ||
+// !sub.paddle_subscription_id)` check below meant a NewebPay-based
+// subscriber would show up here as plain free tier with no way to see
+// their plan or cancel it — a real gap, since the only reachable
+// checkout on the site now leads to a NewebPay subscription, not a
+// Paddle one. There is no NewebPay equivalent of getPaddleSubscription()
+// (no live-status read endpoint exists — only period creation and
+// status-alteration are built in lib/newebpay-api.ts), so a NewebPay row
+// is always served straight from this app's own database rather than a
+// live upstream call; `updatePaymentMethodUrl` is always null for it (no
+// NewebPay feature exists for that), and `scheduledCancellation` reads
+// `canceled_at` (see db/schema.sql's comment on that column) since
+// there's no live "is this pending cancellation" read to check instead.
+//
+// 2026-09-05, same day, continued: also recognizes a subscription with
+// `newebpay_merchant_order_no` set but NO `newebpay_period_no` — a
+// one-time yearly purchase via the new MPG checkout
+// (app/api/checkout/newebpay-yearly/route.ts), which has no recurring
+// commitment at all, so there's no ID to store in `newebpay_period_no`.
+// Without this, the same class of bug this whole comment already
+// describes would have recurred for yearly buyers specifically: the `if
+// (!sub || (!sub.paddle_subscription_id && !sub.newebpay_period_no))`
+// check would treat them as free tier. Added a new `autoRenew` field to
+// the response (false only for this one-time case) so the account page
+// can show "有效至 [date]，不會自動續約" instead of a cancel button that
+// doesn't apply — there's no recurring charge to cancel.
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -22,7 +51,7 @@ export async function GET() {
   // 2026-09-03: also select vat_id so the account page can show/edit the
   // saved 統一編號 alongside billing info — see app/api/account/vat-id/
   // route.ts for the save endpoint and its comment for why this is
-  // capture-and-store only, not wired into Paddle checkout.
+  // capture-and-store only, not wired into checkout.
   const userRows = await sql`SELECT id, vat_id FROM users WHERE email = ${session.user.email}`;
   const userId = userRows[0]?.id as string | undefined;
   const vatId = (userRows[0]?.vat_id as string | null) ?? null;
@@ -31,9 +60,11 @@ export async function GET() {
   }
 
   const subRows = await sql`
-    SELECT tier, status, paddle_subscription_id, current_period_end
+    SELECT tier, status, paddle_subscription_id, newebpay_period_no,
+           newebpay_merchant_order_no, canceled_at, current_period_end
     FROM subscriptions
     WHERE user_id = ${userId} AND status = 'active'
+      AND (current_period_end IS NULL OR current_period_end >= now())
     ORDER BY created_at DESC
     LIMIT 1
   `;
@@ -42,31 +73,67 @@ export async function GET() {
         tier: string;
         status: string;
         paddle_subscription_id: string | null;
+        newebpay_period_no: string | null;
+        newebpay_merchant_order_no: string | null;
+        canceled_at: string | null;
         current_period_end: string | null;
       }
     | undefined;
 
-  if (!sub || !sub.paddle_subscription_id) {
-    // No active subscription (or a subscription with no real Paddle ID,
-    // e.g. old test data) — free tier, nothing to manage in Paddle.
+  const hasAnyProcessorId =
+    sub && (sub.paddle_subscription_id || sub.newebpay_period_no || sub.newebpay_merchant_order_no);
+
+  if (!sub || !hasAnyProcessorId) {
+    // No active (and not-yet-expired — see the current_period_end guard
+    // above, matching lib/tiers.ts's getUserTier()) subscription with a
+    // real processor ID attached — free tier, nothing to manage.
     return NextResponse.json({
       tier: "free",
       status: null,
       currentPeriodEnd: null,
       scheduledCancellation: false,
+      autoRenew: false,
+      updatePaymentMethodUrl: null,
+      vatId,
+    });
+  }
+
+  if (sub.newebpay_period_no) {
+    return NextResponse.json({
+      tier: sub.tier,
+      status: sub.status,
+      currentPeriodEnd: sub.current_period_end,
+      scheduledCancellation: sub.canceled_at !== null,
+      autoRenew: true,
+      updatePaymentMethodUrl: null,
+      vatId,
+    });
+  }
+
+  if (sub.newebpay_merchant_order_no) {
+    // One-time yearly purchase (MPG checkout, no recurring commitment) -
+    // see this file's header comment. autoRenew: false is what tells the
+    // account page to show an expiry date instead of a cancel button.
+    return NextResponse.json({
+      tier: sub.tier,
+      status: sub.status,
+      currentPeriodEnd: sub.current_period_end,
+      scheduledCancellation: false,
+      autoRenew: false,
       updatePaymentMethodUrl: null,
       vatId,
     });
   }
 
   try {
-    const paddleSub = await getPaddleSubscription(sub.paddle_subscription_id);
+    const paddleSub = await getPaddleSubscription(sub.paddle_subscription_id!);
     return NextResponse.json({
       tier: sub.tier,
       status: sub.status,
       currentPeriodEnd:
         paddleSub.current_billing_period?.ends_at ?? sub.current_period_end,
       scheduledCancellation: paddleSub.scheduled_change?.action === "cancel",
+      autoRenew: true,
       updatePaymentMethodUrl: paddleSub.management_urls?.update_payment_method ?? null,
       vatId,
     });
@@ -81,6 +148,7 @@ export async function GET() {
       status: sub.status,
       currentPeriodEnd: sub.current_period_end,
       scheduledCancellation: false,
+      autoRenew: true,
       updatePaymentMethodUrl: null,
       paddleUnreachable: true,
       vatId,

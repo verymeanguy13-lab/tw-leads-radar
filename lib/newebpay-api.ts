@@ -151,3 +151,195 @@ export function buildCreatePeriodOrderRequest(params: CreatePeriodOrderParams): 
     merchantId,
   };
 }
+
+const MPG_CHECKOUT_PATH = "/MPG/mpg_gateway";
+
+/**
+ * 2026-09-05 — 藍新 (NewebPay) general one-time checkout (幕前支付/MPG),
+ * added for the yearly-plan "pay via ATM transfer or 超商代碼, no credit
+ * card" option — genuinely different from everything else in this file,
+ * which is all built against the recurring Period (定期定額) API. Period
+ * is credit-card-only (see architecture.md's 2026-09-05 "correction"
+ * entry); ATM transfer and 超商代碼 are one-time, manually-completed
+ * payment methods that cannot power a recurring charge, but they work
+ * fine for a one-time annual payment - the customer just doesn't get
+ * auto-renewed the way a card-based subscription does. This module
+ * covers ONLY that one-time order; the resulting `subscriptions` row has
+ * no `newebpay_period_no` (there is no recurring commitment) and does
+ * not auto-renew - see app/api/checkout/newebpay-yearly/route.ts and
+ * app/api/webhooks/newebpay-mpg/route.ts.
+ *
+ * Field-level spec sourced this session (2026-09-05) from NewebPay MPG
+ * integration writeups independently cross-checked across two sources
+ * (a GitHub SDK's README and an iThome technical article) - NOT
+ * NewebPay's own authoritative PDF, which this session still cannot
+ * fetch (same blocker as the Period API spec). Both sources agreed on
+ * the outer envelope (MerchantID/TradeInfo/TradeSha/Version) and the
+ * AES-256-CBC + SHA256 encryption scheme, which is reassuring since it
+ * exactly matches encryptPostData()/computeTradeSha() already built and
+ * shipped in this file for the Period API - same convention, real
+ * cross-validation, not a coincidence. The payment-method flags
+ * (CREDIT/WEBATM/VACC/CVS/BARCODE) are confirmed present and named
+ * this way across sources; which of VACC vs WEBATM vs CVS vs BARCODE
+ * Taiwanese payers intuitively call "ATM" was not independently
+ * confirmed - VACC (a virtual account number to transfer to, matching
+ * "ATM轉帳"/"ATM 3568388" that most Taiwanese SaaS/course sites market
+ * as their no-card option) is enabled here alongside CVS (超商代碼) and
+ * BARCODE (條碼繳費) so the customer sees every non-card option
+ * NewebPay's own hosted page supports for this order, not just one.
+ * CREDIT stays enabled too, so someone who prefers a card for the
+ * annual plan still can.
+ *
+ * Same standing caveat as every other function in this file: UNVERIFIED
+ * against NewebPay's authoritative spec or a real/sandbox account.
+ * Payment-method selection, ATM virtual-account display, and CVS code
+ * display all happen entirely on NewebPay's own hosted page after the
+ * browser is redirected there (this module never sees or handles those
+ * details itself) - but whether the *notify* envelope this session's
+ * webhook code expects for a one-time MPG order (as opposed to a Period
+ * order) is correct has never been tested end-to-end.
+ */
+export interface CreateMpgOrderParams {
+  merchantOrderNo: string;
+  amt: number;
+  itemDesc: string;
+  payerEmail: string;
+  returnUrl?: string;
+  notifyUrl?: string;
+  clientBackUrl?: string;
+}
+
+export function buildCreateMpgOrderRequest(params: CreateMpgOrderParams): {
+  url: string;
+  merchantId: string;
+  tradeInfo: string;
+  tradeSha: string;
+  version: string;
+} {
+  const merchantId = requireEnv("NEWEBPAY_MERCHANT_ID");
+  const version = "2.0";
+
+  const fields: Record<string, string | number> = {
+    MerchantID: merchantId,
+    RespondType: "JSON",
+    TimeStamp: Math.floor(Date.now() / 1000),
+    Version: version,
+    MerchantOrderNo: params.merchantOrderNo,
+    Amt: params.amt,
+    ItemDesc: params.itemDesc,
+    Email: params.payerEmail,
+    LoginType: 0,
+    // Payment methods offered on NewebPay's hosted page - see this
+    // function's header comment for why these four specifically.
+    CREDIT: 1,
+    VACC: 1,
+    CVS: 1,
+    BARCODE: 1,
+  };
+  if (params.returnUrl) fields.ReturnURL = params.returnUrl;
+  if (params.notifyUrl) fields.NotifyURL = params.notifyUrl;
+  if (params.clientBackUrl) fields.ClientBackURL = params.clientBackUrl;
+
+  const tradeInfo = encryptPostData(fields);
+  const tradeSha = computeTradeSha(tradeInfo);
+
+  return {
+    url: `${NEWEBPAY_BASE_URL}${MPG_CHECKOUT_PATH}`,
+    merchantId,
+    tradeInfo,
+    tradeSha,
+    version,
+  };
+}
+
+const PERIOD_ALTER_STATUS_PATH = "/MPG/period/AlterStatus";
+
+// AlterType values per the most commonly documented convention across
+// independent 藍新 Period-API integration writeups (this session found no
+// authoritative confirmation, same caveat as everything else in this
+// file - see the header comment): 1 = 啟用/restart a suspended
+// commitment, 2 = 停用/temporarily suspend (skips future charges but
+// keeps the commitment alive), 3 = 終止/terminate permanently. "Cancel"
+// in this product's own account-cancellation flow means terminate, not
+// suspend - matches cancelPaddleSubscription()'s behavior (ends the
+// subscription outright, doesn't pause it).
+export type PeriodAlterAction = "restart" | "suspend" | "terminate";
+
+const ALTER_TYPE: Record<PeriodAlterAction, number> = {
+  restart: 1,
+  suspend: 2,
+  terminate: 3,
+};
+
+export interface AlterPeriodStatusResult {
+  success: boolean;
+  status?: string;
+  message?: string;
+}
+
+/**
+ * Terminates (or suspends/restarts) an existing NewebPay Period
+ * commitment, stopping future charges. Unlike
+ * buildCreatePeriodOrderRequest(), which produces a browser-redirect
+ * payload for a brand-new order, this is a direct server-to-server call:
+ * no new card authorization is needed to stop future charges on an
+ * already-authorized recurring commitment, so NewebPay's JSON response
+ * comes back synchronously with no browser involvement.
+ *
+ * **UNVERIFIED, same caveat as the rest of this file:** this session
+ * could not fetch NewebPay's authoritative current PDF (NDNP-1.0.6) or
+ * test against a real/sandbox account. The request shape below (an
+ * encrypted PostData_ alongside a plain MerchantID field, matching the
+ * convention buildCreatePeriodOrderRequest()/NewebpayCheckoutButton.tsx
+ * already use elsewhere in this codebase) and the assumed
+ * {Status, Message} JSON response envelope are both modeled on that same
+ * convention, not confirmed against the official spec for this specific
+ * endpoint. Do not trust this against real subscriber traffic without
+ * testing it against an actual NewebPay sandbox account first — nothing
+ * in this codebase has been, per every other file in this integration.
+ *
+ * Deliberately does NOT touch this app's own `subscriptions` table -
+ * matches app/api/account/cancel/route.ts's existing Paddle-side pattern
+ * of leaving `status`/`current_period_end` exactly as last set by the
+ * most recent successful-charge notify, so the customer's access
+ * continues until that already-paid period genuinely ends (see
+ * lib/tiers.ts's getUserTier(), which now checks current_period_end for
+ * both processors) rather than being cut off the moment they cancel.
+ */
+export async function alterNewebpayPeriodStatus(
+  periodNo: string,
+  action: PeriodAlterAction
+): Promise<AlterPeriodStatusResult> {
+  const merchantId = requireEnv("NEWEBPAY_MERCHANT_ID");
+
+  const fields: Record<string, string | number> = {
+    RespondType: "JSON",
+    Version: "1.0",
+    TimeStamp: Math.floor(Date.now() / 1000),
+    PeriodNo: periodNo,
+    AlterType: ALTER_TYPE[action],
+  };
+  const postData = encryptPostData(fields);
+
+  const res = await fetch(`${NEWEBPAY_BASE_URL}${PERIOD_ALTER_STATUS_PATH}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ MerchantID: merchantId, PostData_: postData }).toString(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`NewebPay AlterStatus HTTP ${res.status}`);
+  }
+
+  // Response envelope for this endpoint is unconfirmed - assuming a
+  // {Status, Message} shape consistent with NewebPay's RespondType:
+  // "JSON" convention used elsewhere in this file, but not verified
+  // against a real account.
+  const json = await res.json().catch(() => null as { Status?: string; Message?: string } | null);
+  const status = json?.Status;
+  return {
+    success: status === "SUCCESS",
+    status,
+    message: json?.Message,
+  };
+}
