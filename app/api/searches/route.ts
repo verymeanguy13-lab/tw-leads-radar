@@ -116,11 +116,16 @@ export async function POST(req: NextRequest) {
     // ever likely to hit this. Now that 'daily' exists and is
     // business-only, a pro-tier user selecting daily would see that
     // same free-tier-worded message, which is simply wrong for them.
+    //
+    // 2026-09-05: free tier's own allowed cadence flipped from weekly to
+    // monthly (see lib/tiers.ts's comment on TIER_LIMITS for why) - this
+    // message updated to match, so a free user hitting this now sees an
+    // accurate reason instead of a stale one.
     const message =
       cadence === "daily"
         ? "每日通知僅限每日方案（Plan C）使用，請升級方案。"
         : tier === "free"
-          ? "免費方案僅支援每週通知，請升級方案以使用每月或每日通知。"
+          ? "免費方案僅支援每月通知，請升級方案以使用每週或每日通知。"
           : "此方案不支援所選擇的通知頻率，請升級方案。";
     return NextResponse.json({ errors: { cadence: message } }, { status: 403 });
   }

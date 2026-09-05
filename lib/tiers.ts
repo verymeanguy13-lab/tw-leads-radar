@@ -22,8 +22,19 @@ interface TierLimits {
 // customers get, with no error or indication anywhere. See
 // architecture.md's 2026-08-30 entry for the full fix across every
 // layer this touched.
+// 2026-09-05: free tier moved from "weekly" to "monthly" digests.
+// Flagged directly by the user after noticing the pricing page's own
+// copy contradicted this: Plan B is marketed and priced (NT$600/月) as
+// "方案B｜週報方案" (the *weekly* plan) with "每週電子郵件摘要" listed as its
+// headline paid feature - but free tier was *also* getting a weekly
+// digest, for nothing, which undercuts the entire reason to pay for
+// Plan B. Free tier's own blueprint spec (Session 19: "weekly digest
+// only") predates Plan B's later "週報方案" positioning and was never
+// reconciled against it until now. Monthly is the correct free-tier
+// baseline going forward - weekly becomes an actual paid differentiator,
+// matching what the pricing page has been promising all along.
 export const TIER_LIMITS: Record<Tier, TierLimits> = {
-  free: { maxSavedSearches: 1, allowedCadences: ["weekly"], csvExport: false },
+  free: { maxSavedSearches: 1, allowedCadences: ["monthly"], csvExport: false },
   pro: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly"], csvExport: true },
   business: { maxSavedSearches: null, allowedCadences: ["weekly", "monthly", "daily"], csvExport: true },
 };

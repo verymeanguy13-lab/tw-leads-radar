@@ -32,6 +32,46 @@ const INDUSTRY_CODES = [
   { code: "Z", label: "其他未分類業" },
 ];
 
+// 2026-09-05: generalized the "gray out what this tier can't use, with a
+// hint to upgrade" treatment that already existed here for the daily
+// option (business-only) to every cadence, since free tier's own
+// allowed cadence changed from weekly to monthly (see lib/tiers.ts's
+// TIER_LIMITS comment for why: Plan B is priced and marketed as the
+// *weekly* plan - "方案B｜週報方案", NT$600/月 - so free tier also getting
+// weekly for nothing undercut the entire reason to pay for it). Before
+// this, only "daily" was ever shown disabled here; "monthly" had no gate
+// in this form at all even though free tier couldn't actually use it
+// server-side - a free user could pick it, submit, and only then learn
+// it was rejected. minTier drives both which options are disabled and
+// which hint text shows, from one small table instead of duplicated
+// per-option logic.
+const TIER_RANK: Record<"free" | "pro" | "business", number> = {
+  free: 0,
+  pro: 1,
+  business: 2,
+};
+
+const CADENCE_OPTIONS: {
+  value: "monthly" | "weekly" | "daily";
+  label: string;
+  minTier: "free" | "pro" | "business";
+  hint: string;
+}[] = [
+  { value: "monthly", label: "每月", minTier: "free", hint: "" },
+  {
+    value: "weekly",
+    label: "每週",
+    minTier: "pro",
+    hint: "僅限方案B（週報方案）以上使用，",
+  },
+  {
+    value: "daily",
+    label: "每日",
+    minTier: "business",
+    hint: "僅限每日方案（Plan C）使用，",
+  },
+];
+
 export default function NewSearchPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -41,7 +81,10 @@ export default function NewSearchPage() {
   const [capitalMax, setCapitalMax] = useState("");
   const [entityType, setEntityType] = useState<"company" | "business" | "both">("both");
   const [keyword, setKeyword] = useState("");
-  const [cadence, setCadence] = useState<"weekly" | "monthly" | "daily">("weekly");
+  // Default to "monthly", not "weekly" - monthly is now the one cadence
+  // every tier can use (see TIER_RANK/CADENCE_OPTIONS above), so it's
+  // the only safe default before the tier fetch below resolves.
+  const [cadence, setCadence] = useState<"weekly" | "monthly" | "daily">("monthly");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [tier, setTier] = useState<"free" | "pro" | "business" | null>(null);
@@ -211,12 +254,14 @@ export default function NewSearchPage() {
       <div>
         <label className="block mb-1 font-medium">通知頻率</label>
         <div className="flex flex-col gap-2">
-          {[
-            { value: "weekly", label: "每週" },
-            { value: "monthly", label: "每月" },
-            { value: "daily", label: "每日", businessOnly: true },
-          ].map((opt) => {
-            const disabled = opt.businessOnly && tier !== "business";
+          {CADENCE_OPTIONS.map((opt) => {
+            // tier === null means the /api/user/tier fetch above hasn't
+            // resolved yet - treat that the same as the most restrictive
+            // tier (rank -1, below even "free") rather than assuming
+            // access, per this file's existing "safe direction to fail"
+            // comment on that fetch.
+            const currentRank = tier ? TIER_RANK[tier] : -1;
+            const disabled = currentRank < TIER_RANK[opt.minTier];
             return (
               <div key={opt.value} className="flex items-center gap-2">
                 <label className="flex items-center gap-2">
@@ -225,13 +270,13 @@ export default function NewSearchPage() {
                     name="cadence"
                     checked={cadence === opt.value}
                     disabled={disabled}
-                    onChange={() => setCadence(opt.value as typeof cadence)}
+                    onChange={() => setCadence(opt.value)}
                   />
                   {opt.label}
                 </label>
                 {disabled && (
                   <span className="text-xs text-secondary">
-                    僅限每日方案（Plan C）使用，
+                    {opt.hint}
                     <Link href="/pricing" className="underline">
                       查看方案
                     </Link>

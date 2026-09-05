@@ -2109,3 +2109,43 @@ git add db/schema.sql scripts/migrate-add-prospect-contacts.ts scripts/scrape-bo
 git commit -m "Sessions 25-26 (Prospect Directory) + tier-gated public search + site-wide login/logout + search rate limiting"
 git push
 ```
+
+## Production build broke after push — root cause found, and free tier's cadence policy changed — 2026-09-05
+
+**The build break.** After pushing, Vercel failed with `Module not found: Can't resolve '@/lib/rate-limit'` in `app/(marketing)/search/page.tsx`. Checked the actual GitHub repo directly (not a guess): the commit that landed (`c2787bc`, "tier-gated public search + site-wide login/logout") includes `app/(marketing)/search/page.tsx` and `db/schema.sql` already containing the rate-limit changes, but is missing `lib/rate-limit.ts` and `scripts/migrate-add-search-rate-limits.ts` entirely. What happened: those two files were written to your disk after that commit's `git add` command was given, but the command actually run was an earlier one (from before rate-limiting existed) that didn't list them by name. `git add` only stages what's named — `db/schema.sql` and `search/page.tsx` were in every version of the command, so they picked up their current (newer) on-disk content regardless of which command text was used, but the two new files, only named in the final command, never got staged. Verified this is the complete explanation by diffing every file this session touched against what's actually on GitHub — those two were the only ones missing, everything else matches exactly.
+
+**Fix:** both files are already sitting on your disk untouched (verified) - this is a git-only fix, no new file delivery needed:
+
+```
+git add lib/rate-limit.ts scripts/migrate-add-search-rate-limits.ts
+git commit -m "Add missing lib/rate-limit.ts and migration (fixes build break)"
+git push
+```
+
+Confirmed this resolves it: checked out the actual `origin/main` HEAD into a clean clone, added just these two files on top, and `tsc --noEmit` and `next build`'s module-resolution stage both pass (the build only fails past that point in this sandbox specifically on a Google Fonts fetch, which is a sandbox network restriction, not a real problem — Vercel's own build environment has normal internet access to fonts.googleapis.com).
+
+**Separately, free tier's notification cadence changed from weekly to monthly.** You caught something real: Plan B is priced and marketed as "方案B｜週報方案" (NT$600/月) with "每週電子郵件摘要" as its headline paid feature — but free tier's own bullet also promised "每週摘要" (weekly), for nothing. That directly undercuts the reason to pay for Plan B. The blueprint's original Session 19 spec did say "weekly digest only" for free tier, but that predates Plan B's later "週報方案" positioning and the two were never reconciled until you pointed it out just now.
+
+Changed:
+- `lib/tiers.ts`: `free.allowedCadences` is now `["monthly"]` (was `["weekly"]`). Pro and business unchanged (`["weekly","monthly"]` and `["weekly","monthly","daily"]`).
+- `app/api/searches/route.ts`: the free-tier rejection message now says "免費方案僅支援每月通知，請升級方案以使用每週或每日通知。" (was worded around weekly).
+- `app/(marketing)/pricing/page.tsx`: Plan A's bullet now reads "1 組儲存搜尋條件（每月摘要）" instead of "（每週摘要）".
+- `app/(app)/searches/new/page.tsx`: generalized the "gray it out, show a hint, link to pricing" treatment that already existed here for the daily/business-only option (你說的「grayed out method」) to every cadence, driven by one small `CADENCE_OPTIONS`/`TIER_RANK` table instead of one-off logic. Before this, "monthly" had no gate in this form at all even though free tier couldn't actually use it server-side — a free user could pick it and only find out it was rejected after submitting. Now weekly is grayed out below Pro, daily stays grayed out below Business, and the default selection is "monthly" (the one cadence every tier can use), not "weekly".
+- New `scripts/migrate-free-tier-cadence-to-monthly.ts`: a one-time data fix for any saved_searches row that already exists with a non-monthly cadence under a user who isn't currently on an active pro/business subscription. Changing `TIER_LIMITS` alone only affects new searches going forward — this catches anyone who already has a free-tier weekly search sitting from before tonight. Safe to re-run.
+- Confirmed `lib/email/digest.ts`'s cadence-due logic already handles "monthly" correctly end-to-end (`CADENCE_DUE_AFTER_DAYS.monthly = 28`, and the due-check is cadence-agnostic) — this was already fully wired for Pro tier, so flipping free tier onto it needed no digest-sending changes.
+
+**Anonymous visitors get no notifications** — already true, no code change needed. There's no saved_searches row without a user_id, and no path for an anonymous /search visit to create one; digest emails only ever go to users who created an account.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint .` all clean, same 10 pre-existing unrelated errors as every check this session, nothing new.
+
+**Already written to your real local repo and verified byte-for-byte:** `lib/tiers.ts`, `app/api/searches/route.ts`, `app/(app)/searches/new/page.tsx`, `app/(marketing)/pricing/page.tsx` (all four updated), `scripts/migrate-free-tier-cadence-to-monthly.ts` (new).
+
+**Two things to run, in order, before this is fully live:**
+
+```
+npx tsx scripts/migrate-add-search-rate-limits.ts
+npx tsx scripts/migrate-free-tier-cadence-to-monthly.ts
+git add lib/rate-limit.ts scripts/migrate-add-search-rate-limits.ts lib/tiers.ts app/api/searches/route.ts "app/(app)/searches/new/page.tsx" "app/(marketing)/pricing/page.tsx" scripts/migrate-free-tier-cadence-to-monthly.ts architecture.md
+git commit -m "Fix missing rate-limit files; free tier cadence weekly -> monthly"
+git push
+```
