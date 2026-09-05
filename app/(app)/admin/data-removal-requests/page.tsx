@@ -23,7 +23,7 @@ export default async function DataRemovalAdminPage() {
   const sql = db();
 
   const pending = await sql`
-    SELECT id, uniform_id, company_name_submitted, requester_email, reason, created_at
+    SELECT id, uniform_id, company_name_submitted, responsible_person_submitted, requester_email, reason, created_at
     FROM data_removal_requests
     WHERE status = 'pending'
     ORDER BY created_at ASC
@@ -57,6 +57,13 @@ export default async function DataRemovalAdminPage() {
                   <p className="font-medium">{r.company_name_submitted}</p>
                   <p className="text-secondary">
                     提交之統一編號：{r.uniform_id ?? "（未提供）"}
+                  </p>
+                  <p className="text-secondary">
+                    提交之負責人姓名：{r.responsible_person_submitted ?? "（未提供）"}
+                    {" "}
+                    <span className="text-xs">
+                      （已與政府登記資料核對相符，方能送出此請求）
+                    </span>
                   </p>
                   <p className="text-secondary">聯絡信箱：{r.requester_email}</p>
                   {r.reason && <p className="text-secondary">備註：{r.reason}</p>}

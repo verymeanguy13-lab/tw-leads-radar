@@ -2530,3 +2530,48 @@ git add lib/cadence.ts lib/csv-export.ts "app/api/searches/[id]/digest-export/ro
 git commit -m "Bound digest emails to their cadence's recency window; replace CSV attachments with a per-notification download link (masked for free tier)"
 git push
 ```
+
+## Privacy Policy and Terms of Service links were only reachable from marketing pages, not the logged-in app — fixed via the global Footer — 2026-09-05
+
+The user reported that `/privacy` and `/terms` existed but were "no where accessible." Investigation on the live site found the links already existed — but only in `app/(marketing)/layout.tsx`'s own bottom bar, which every marketing page (home, `/pricing`, `/search`, `/login`, `/signup`, `/data-removal`) gets. The moment a user logs in and lands anywhere under `app/(app)/` (`/searches`, `/account`, `/admin/*`), that layout no longer applies — `AppNav` (`components/AppNav.tsx`) has no privacy/terms links at all, and the one footer that *does* render on every page regardless of route group (`components/Footer.tsx`, rendered once from the root `app/layout.tsx`) only had a "資料移除請求" link. Confirmed directly on the live site with the built-in browser: `隱私權政策`/`服務條款` findable on the homepage, neither findable on `/searches`.
+
+Fix: added both links to the global `Footer.tsx` (now three links: 隱私權政策, 服務條款, 資料移除請求) so they show on every page including the whole logged-in app section, then removed the now-redundant duplicate bar from `app/(marketing)/layout.tsx` so marketing pages don't show the same two links twice.
+
+**Verified:** live on production after push — `/searches` (previously had neither link) now shows both, correctly linking to `/privacy` and `/terms`; homepage still shows them without duplication.
+
+**Modified:** `components/Footer.tsx`, `app/(marketing)/layout.tsx`.
+
+```
+git add components/Footer.tsx "app/(marketing)/layout.tsx"
+git commit -m "Add privacy policy and terms of service links to the global footer so they are reachable from every page, including the logged-in app section"
+git push
+```
+
+## /data-removal now requires and cross-checks 統一編號 + 負責人姓名 against real company records before accepting a request — 2026-09-05
+
+Direct user request: make the public data-removal form's required data "more stringent... to avoid malicious harassment." Asked the user to name the specific risk before building anything, since the admin-approval step (`app/api/admin/data-removal-requests/[id]/route.ts`) already requires a confirmed 8-digit `uniform_id` matching a real `companies` row before `suppressed_at` is ever set — so nothing here could auto-suppress a company. The user picked impersonation-based wrongful takedown: someone who isn't a company's actual 負責人 submitting a plausible-looking request (company name + any email address) naming a real competitor, to either get them wrongfully delisted or to pressure the admin into it. The user also asked whether requiring photos of both sides of a government ID would be lawful.
+
+**On the ID-photo question:** answered as a non-lawyer with an explicit recommendation *not* to build it without real legal review — Taiwan's PDPA necessity/proportionality principle (個資法 Article 5) makes collecting a full ID-card image (photo, full ID number, birthdate, address) for this low-stakes a verification hard to justify against the far narrower data actually needed, on top of the new custodial burden (secure storage, breach-notification exposure) of holding scanned government IDs that this site doesn't otherwise touch. Not built. If the user gets real legal confirmation and still wants it, that's a distinct future feature, not a small addition to this one.
+
+**What was built instead:** both `統一編號` (previously optional — the API only used it to speed up admin review, nothing checked it against anything) and a new `負責人姓名` field are now required by the form, and `app/api/data-removal-requests/route.ts` looks up the submitted `uniform_id` in `companies` at submission time and rejects outright (before any row is inserted) if either the uniform_id doesn't match a real company or the submitted name doesn't match that company's `responsible_person` (whitespace-normalized comparison only — no fuzzy matching, these are Chinese names). The rejection message deliberately never reveals the correct registered name, so the check can't be used as a name-guessing oracle. If a company's `responsible_person` is missing from our own data (an ingestion gap, not the requester's fault), the requester is routed to email `shihjungching@gmail.com` directly for manual verification instead of being silently blocked.
+
+Why this is a real barrier and not just theater: `uniform_id` alone was never one, since any uniform_id a requester could type is already visible in this site's own public search results. `responsible_person`, however, is one of the three fields this site masks for anonymous/free-tier visitors (see `/pricing`) — an anonymous bad actor can't just read the real name off the site the way they can the uniform_id. It is *not* proof of identity (a paying subscriber, or someone who knows the target through other means, could still pass it), but it raises the bar for a drive-by impersonation attempt using only what this site itself exposes for free.
+
+New column `data_removal_requests.responsible_person_submitted` (migration: `scripts/migrate-add-removal-responsible-person.ts`) stores what was submitted, purely as an audit trail — by the time a row exists, the match already passed. Surfaced in the admin review queue (`app/(app)/admin/data-removal-requests/page.tsx`) alongside the existing fields, with a one-line note that it was already checked against the government registry.
+
+Deliberately not built this round (user only confirmed this one risk): rate-limiting/spam-flooding protection on the endpoint.
+
+**New files:** `scripts/migrate-add-removal-responsible-person.ts`.
+**Modified:** `app/(marketing)/data-removal/page.tsx`, `app/api/data-removal-requests/route.ts`, `app/(app)/admin/data-removal-requests/page.tsx`, `db/schema.sql`.
+
+```
+git add scripts/migrate-add-removal-responsible-person.ts "app/(marketing)/data-removal/page.tsx" app/api/data-removal-requests/route.ts "app/(app)/admin/data-removal-requests/page.tsx" db/schema.sql architecture.md
+git commit -m "Require and cross-check 統一編號 + 負責人姓名 against real company records before accepting a data-removal request"
+git push
+```
+
+Then, once, against the real production database (same one-time-migration pattern as every other `scripts/migrate-*.ts` — see `scripts/migrate-add-vat-id.ts` for the reference shape):
+
+```
+npx tsx scripts/migrate-add-removal-responsible-person.ts
+```

@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS data_removal_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     uniform_id VARCHAR(8),
     company_name_submitted TEXT NOT NULL,
+    responsible_person_submitted TEXT,
     requester_email TEXT NOT NULL,
     reason TEXT,
     status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
@@ -129,6 +130,29 @@ CREATE TABLE IF NOT EXISTS data_removal_requests (
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_removal_requests_status ON data_removal_requests(status);
+
+-- Added 2026-09-05: 統一編號 and 負責人姓名 (responsible_person_submitted)
+-- are now BOTH required by the public /data-removal form, and the API
+-- route (app/api/data-removal-requests/route.ts) rejects the submission
+-- outright - before it ever reaches this table - if the submitted name
+-- doesn't match companies.responsible_person for that uniform_id.
+-- uniform_id stays nullable at the column level only because older rows
+-- predate this requirement; the column itself is unchanged.
+--
+-- Why: the uniform_id alone was never a real barrier against
+-- impersonation, since any uniform_id a requester could type is already
+-- visible in this site's own public search results - it only ever
+-- filtered out typos and made-up company names. Requiring the exact
+-- registered 負責人姓名 too raises the bar, since that field is masked
+-- for anonymous/free-tier visitors on this site (see pricing page) and
+-- only shown in full to paying subscribers. It's not proof of identity -
+-- see architecture.md's 2026-09-05 entry for why a stronger check (e.g.
+-- requiring a copy of a government ID) was deliberately NOT built: PDPA's
+-- necessity/proportionality principle makes collecting a full ID-card
+-- image for this purpose legally questionable on its own, on top of the
+-- new custodial burden of storing scanned IDs securely - this needs real
+-- legal input before being built, not a code change made on assumption.
+-- migrate-add-removal-responsible-person.ts adds the column.
 
 CREATE TABLE IF NOT EXISTS saved_searches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

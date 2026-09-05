@@ -21,6 +21,7 @@ import { useState } from "react";
 export default function DataRemovalPage() {
   const [uniformId, setUniformId] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [responsiblePerson, setResponsiblePerson] = useState("");
   const [email, setEmail] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -37,8 +38,9 @@ export default function DataRemovalPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uniformId: uniformId.trim() || null,
+          uniformId: uniformId.trim(),
           companyName: companyName.trim(),
+          responsiblePerson: responsiblePerson.trim(),
           email: email.trim(),
           reason: reason.trim() || null,
         }),
@@ -87,18 +89,17 @@ export default function DataRemovalPage() {
     <div className="px-8 py-16 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">資料移除請求</h1>
       <p className="text-secondary mb-8">
-        {"若您是本服務所列公司登記資料中的負責人，且不希望您的公司資訊出現於本服務的搜尋結果與通知信中，可透過以下表單提出移除請求。我們將審核後儘速處理。"}
+        {"若您是本服務所列公司登記資料中的負責人，且不希望您的公司資訊出現於本服務的搜尋結果與通知信中，可透過以下表單提出移除請求。為避免他人冒名申請移除其他公司的資料，以下統一編號與負責人姓名將與政府公開登記資料核對，請務必填寫正確。我們將審核後儘速處理。"}
       </p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium mb-1">
-            {"統一編號（選填，若知道請填寫以加快審核）"}
-          </label>
+          <label className="block text-sm font-medium mb-1">{"統一編號（必填）"}</label>
           <input
             type="text"
             value={uniformId}
             onChange={(e) => setUniformId(e.target.value)}
+            required
             maxLength={8}
             className="w-full border rounded px-3 py-2"
             style={{ borderColor: "var(--border)" }}
@@ -111,6 +112,20 @@ export default function DataRemovalPage() {
             type="text"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
+            required
+            className="w-full border rounded px-3 py-2"
+            style={{ borderColor: "var(--border)" }}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            {"負責人姓名（必填，須與政府登記資料完全相符）"}
+          </label>
+          <input
+            type="text"
+            value={responsiblePerson}
+            onChange={(e) => setResponsiblePerson(e.target.value)}
             required
             className="w-full border rounded px-3 py-2"
             style={{ borderColor: "var(--border)" }}
