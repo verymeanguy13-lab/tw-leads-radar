@@ -114,15 +114,35 @@ interface Filters {
 //      see lib/masking.ts's isNarrowResultSet()/maskCapitalToBracket()/
 //      maskRegistrationDateToWeek() for the additional coarsening this
 //      applies on top of the name/ID/person masking in that case.
+//   6. 2026-09-05, same day, landing-page friction pass: a cold visitor
+//      previously had to fill in at least one filter (or a 2+ character
+//      keyword) before seeing anything - not a login wall, but still
+//      five possible decisions before any payoff. Added a `?latest=1`
+//      quick-start link that runs with whatever filters happen to be
+//      set (normally none) and is treated as an explicit hasFilters
+//      trigger on its own, same idea as a keyword or a checkbox - it's a
+//      deliberate ask to browse, not an accidentally-empty form
+//      submission, so it doesn't undermine the "never browse everything
+//      by accident" rule below. The industry/region/capital/entity-type
+//      filters are now behind a collapsed <details> ("進階篩選"),
+//      auto-expanded only when the page loads with one of those already
+//      set (e.g. a bookmarked or shared filtered URL) - the keyword box
+//      and the quick-start link are the only things visible by default.
+//      Also added a real-data stat line above the form (recent
+//      registration count, unmasked - it's an aggregate, not identifying
+//      information about any one company) since freshness is now
+//      something this page can honestly show off for every visitor, not
+//      just paid ones.
 //
 // Unchanged since earlier versions:
 //   - No saved_searches / search_matches read here - this function is a
 //     direct, capped SELECT against companies. Saving (above) goes
 //     through the existing POST /api/searches route, not a new one.
 //   - At least one filter must be set (keyword of 2+ characters, a
-//     region, an industry code, or a capital bound) before the query
-//     runs at all - an empty form renders only the form, never a
-//     "browse everything" listing.
+//     region, an industry code, a capital bound, or the `latest=1`
+//     quick-start link) before the query runs at all - an empty form
+//     renders only the form, never a "browse everything" listing by
+//     accident.
 //   - Hard-capped at 20 rows, no pagination.
 //   - suppressed_at IS NULL always, regardless of tier.
 //   - Masking is applied only when NOT on a paid tier, inside this same
@@ -159,6 +179,25 @@ async function runSearch(filters: Filters) {
     | "registration_date"
     | "status"
   >[];
+}
+
+// Landing-page credibility stat (2026-09-05) - an aggregate count, not
+// any single company's data, so it's shown to every visitor unmasked
+// regardless of tier. Uses the same registration_date-falls-back-to-
+// created_at pattern as everywhere else in this codebase that reasons
+// about "how new is this row" (see lib/matching/engine.ts's comment for
+// why registration_date, not created_at, is the right column). Cheap
+// enough to run on every page load: a single COUNT with the same
+// predicate shape as the existing indexed queries.
+async function getRecentRegistrationCount(): Promise<number> {
+  const sql = db();
+  const rows = await sql`
+    SELECT COUNT(*)::int AS count
+    FROM companies
+    WHERE COALESCE(registration_date, created_at::date) >= (now() - interval '7 days')::date
+      AND suppressed_at IS NULL
+  `;
+  return (rows[0]?.count as number | undefined) ?? 0;
 }
 
 interface ViewerState {
@@ -213,6 +252,7 @@ export default async function PublicSearchPage({
     capital_min?: string;
     capital_max?: string;
     entity_type?: string;
+    latest?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -227,14 +267,21 @@ export default async function PublicSearchPage({
       sp.entity_type === "company" || sp.entity_type === "business" ? sp.entity_type : "both",
   };
 
-  const hasFilters =
-    filters.keyword.length >= 2 ||
+  // A deliberate "查看近期新公司" click, not an accidentally-empty form -
+  // see this file's header comment, point 6.
+  const isLatestRequest = sp.latest === "1";
+
+  const hasAdvancedFilters =
     filters.regions.length > 0 ||
     filters.industryCodes.length > 0 ||
     filters.capitalMin !== null ||
-    filters.capitalMax !== null;
+    filters.capitalMax !== null ||
+    filters.entityType !== "both";
+
+  const hasFilters = isLatestRequest || filters.keyword.length >= 2 || hasAdvancedFilters;
 
   const { isLoggedIn, isPaid } = await resolveViewerState();
+  const recentCount = await getRecentRegistrationCount();
 
   let results: Awaited<ReturnType<typeof runSearch>> = [];
   let rateLimited = false;
@@ -300,6 +347,15 @@ export default async function PublicSearchPage({
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <h1 className="text-xl font-bold mb-2">查詢公司登記資料</h1>
+
+      {/* 2026-09-05: a real, unmasked stat every visitor can see before
+          doing anything - see this file's header comment, point 6. An
+          aggregate count isn't identifying information about any single
+          company, so it's shown regardless of tier or login state. */}
+      <p className="text-sm font-medium mb-4">
+        {`近 7 天已有 ${recentCount.toLocaleString()} 家新公司完成登記，資料每日更新。`}
+      </p>
+
       {isPaid ? (
         <p className="text-sm text-secondary mb-6">不需登入即可查詢。您的帳號為付費方案，以下顯示完整未遮蔽資料。</p>
       ) : (
@@ -315,101 +371,122 @@ export default async function PublicSearchPage({
       )}
 
       <form method="get" className="space-y-4 mb-6 border-b border-default pb-6">
-        <div>
-          <label className="block text-xs text-secondary mb-1">公司名稱關鍵字</label>
-          <input
-            type="text"
-            name="q"
-            defaultValue={sp.q ?? ""}
-            placeholder="選填，至少 2 個字才會套用"
-            className="w-full max-w-sm border rounded px-3 py-2 text-sm"
-            style={{ borderColor: "var(--border)" }}
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-secondary mb-1">行業別</label>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-sm">
-            {INDUSTRY_CODES.map((ind) => (
-              <label key={ind.code} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="industry_codes"
-                  value={ind.code}
-                  defaultChecked={filters.industryCodes.includes(ind.code)}
-                />
-                {ind.label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs text-secondary mb-1">地區</label>
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-sm max-h-40 overflow-y-auto">
-            {REGIONS.map((r) => (
-              <label key={r} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="regions"
-                  value={r}
-                  defaultChecked={filters.regions.includes(r)}
-                />
-                {r}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 max-w-sm">
-          <div>
-            <label className="block text-xs text-secondary mb-1">最低資本額</label>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs text-secondary mb-1">公司名稱關鍵字</label>
             <input
-              type="number"
-              min={0}
-              name="capital_min"
-              defaultValue={sp.capital_min ?? ""}
-              className="w-full border rounded px-3 py-2 text-sm"
+              type="text"
+              name="q"
+              defaultValue={sp.q ?? ""}
+              placeholder="選填，至少 2 個字才會套用"
+              className="w-full max-w-sm border rounded px-3 py-2 text-sm"
               style={{ borderColor: "var(--border)" }}
             />
           </div>
-          <div>
-            <label className="block text-xs text-secondary mb-1">最高資本額</label>
-            <input
-              type="number"
-              min={0}
-              name="capital_max"
-              defaultValue={sp.capital_max ?? ""}
-              className="w-full border rounded px-3 py-2 text-sm"
-              style={{ borderColor: "var(--border)" }}
-            />
-          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 rounded text-sm text-white"
+            style={{ backgroundColor: "var(--accent)" }}
+          >
+            查詢
+          </button>
         </div>
 
-        <div>
-          <label className="block text-xs text-secondary mb-1">公司／商業類型</label>
-          <div className="flex gap-4 text-sm">
-            {ENTITY_TYPE_OPTIONS.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-2">
+        {/* Quick-start (2026-09-05): a plain link, not a form field - it
+            deliberately ignores whatever's currently typed/checked, so
+            it's always exactly "show me the newest 20, no filters"
+            regardless of where a visitor already is in the form. See
+            this file's header comment, point 6, for why `latest=1`
+            counts as a real hasFilters trigger rather than an
+            accidentally-empty submission. */}
+        <p className="text-sm">
+          <Link href="/search?latest=1" className="underline" style={{ color: "var(--accent)" }}>
+            {"或直接查看最新登記公司 →"}
+          </Link>
+        </p>
+
+        <details open={hasAdvancedFilters}>
+          <summary className="text-sm text-secondary cursor-pointer select-none">
+            進階篩選（行業別、地區、資本額、公司／商業類型）
+          </summary>
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="block text-xs text-secondary mb-1">行業別</label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-sm">
+                {INDUSTRY_CODES.map((ind) => (
+                  <label key={ind.code} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="industry_codes"
+                      value={ind.code}
+                      defaultChecked={filters.industryCodes.includes(ind.code)}
+                    />
+                    {ind.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-secondary mb-1">地區</label>
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-1 text-sm max-h-40 overflow-y-auto">
+                {REGIONS.map((r) => (
+                  <label key={r} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="regions"
+                      value={r}
+                      defaultChecked={filters.regions.includes(r)}
+                    />
+                    {r}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 max-w-sm">
+              <div>
+                <label className="block text-xs text-secondary mb-1">最低資本額</label>
                 <input
-                  type="radio"
-                  name="entity_type"
-                  value={opt.value}
-                  defaultChecked={filters.entityType === opt.value}
+                  type="number"
+                  min={0}
+                  name="capital_min"
+                  defaultValue={sp.capital_min ?? ""}
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)" }}
                 />
-                {opt.label}
-              </label>
-            ))}
-          </div>
-        </div>
+              </div>
+              <div>
+                <label className="block text-xs text-secondary mb-1">最高資本額</label>
+                <input
+                  type="number"
+                  min={0}
+                  name="capital_max"
+                  defaultValue={sp.capital_max ?? ""}
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)" }}
+                />
+              </div>
+            </div>
 
-        <button
-          type="submit"
-          className="px-4 py-2 rounded text-sm text-white"
-          style={{ backgroundColor: "var(--accent)" }}
-        >
-          查詢
-        </button>
+            <div>
+              <label className="block text-xs text-secondary mb-1">公司／商業類型</label>
+              <div className="flex gap-4 text-sm">
+                {ENTITY_TYPE_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="entity_type"
+                      value={opt.value}
+                      defaultChecked={filters.entityType === opt.value}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </details>
       </form>
 
       {!hasFilters && (

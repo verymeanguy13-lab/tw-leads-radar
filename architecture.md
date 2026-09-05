@@ -2247,3 +2247,32 @@ git add lib/masking.ts lib/matching/engine.ts "app/(marketing)/search/page.tsx" 
 git commit -m "Remove 30-day freshness gate; redaction is now the only free-tier/anonymous gate"
 git push
 ```
+
+## Landing-page friction pass: fixed a homepage/search disconnect, added a quick-start and a live stat — 2026-09-05
+
+Follow-on from the redaction-model change above. The user asked whether `/search`'s bare filter form (screenshot: eleven industry checkboxes, twenty-two regions, capital range, entity type, all before any result) should just be the landing page, versus a traditional marketing page, versus modeling a competitor's (open-find.com's) approach. Researched open-find.com: it's a weekly email-subscription pitch ("同業還在慢慢搜尋，你已經拿到了第一手名單" - competitors are still searching manually while you already have the list), a push model that trades on brand trust the user doesn't have yet as a new entrant. Recommendation given: don't copy that model or its tagline (verbatim competitor copy, and a subscription-first ask before showing any value works against the whole point of just having made search free and login-less); keep search as the primary low-friction entry point, but fix two real problems with it as a cold-visitor's first stop - no framing/credibility signal, and a filter wall that's real cognitive effort even without a login wall.
+
+Checked the actual homepage (`app/(marketing)/page.tsx`) rather than assuming, and found a genuine, pre-existing disconnect independent of the strategy question: its only call to action pointed straight at `/signup`, so a cold visitor was never even shown `/search` - the free, no-login search this session spent the day building out. It also still said "資料新鮮度依方案而定" (freshness depends on plan), which is now flatly wrong since the freshness gate was removed entirely in the previous entry.
+
+Asked the user directly whether `/` should become `/search` itself (retiring the separate hero page) or stay separate with its CTA/copy fixed - she chose the latter (lower risk, easier to reverse). Changes:
+
+**`app/(marketing)/page.tsx`:**
+- Primary CTA changed from "免費開始使用" → `/signup` to "免費查詢" → `/search`. Value-first, not signup-first, matching the same growth-stage reasoning from the earlier redaction-vs-freshness discussion (prove it works before asking for anything).
+- `/signup` is now a secondary link in the sub-copy ("免費註冊亦可儲存搜尋條件，每月自動通知"), not the only path in.
+- The stale "資料新鮮度依方案而定" line replaced with an accurate one describing the actual current model: current data for everyone, masked identifying fields for free tier.
+
+**`app/(marketing)/search/page.tsx`:**
+- Added a real, unmasked stat above the form: a 7-day recent-registration count (`getRecentRegistrationCount()`, a single `COUNT(*)` using the same registration-date-falls-back-to-created_at pattern used everywhere else in this codebase). It's an aggregate, not identifying information about any one company, so it's shown to every visitor regardless of tier or login - the first concrete, credible thing a cold visitor sees, and something this page genuinely can claim now that data is current for everyone.
+- Added a "或直接查看最新登記公司 →" quick-start link (`/search?latest=1`) that runs with no filters at all - the query's existing `ORDER BY registration_date DESC LIMIT 20` already returns exactly "the newest 20" once given no filter constraints, so no new query logic was needed, just a new way to trigger it. `latest=1` counts as an explicit `hasFilters` trigger alongside a keyword or a checkbox, since it's a deliberate ask to browse, not an accidentally-empty form submission - consistent with the existing "never browse everything by accident" rule, not an exception to it.
+- The industry/region/capital/entity-type filters (the five-field wall from the earlier filter-parity work) are now collapsed behind a `<details>`/`<summary>` ("進階篩選"), auto-expanded only when the page loads with one of those already set (e.g. a bookmarked or shared filtered URL). The keyword box, the 查詢 button, and the quick-start link are the only things visible by default - one click or one short keyword now gets a first-time visitor to a real result instead of five decisions first.
+- No filter-matching logic, masking, or rate-limiting changed - `latest=1` goes through the exact same `runSearch()`, tier-based masking, and anonymous rate limiter as every other query on this page.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint` on both touched files and a full `npx eslint .` - same 10 pre-existing unrelated errors this session has consistently confirmed, nothing new. `npm run build` passes typecheck/module-resolution and fails only afterward on the same sandbox-only Google Fonts network restriction every previous build check this session has hit.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/page.tsx`, `app/(marketing)/search/page.tsx`.
+
+```
+git add "app/(marketing)/page.tsx" "app/(marketing)/search/page.tsx" architecture.md
+git commit -m "Fix homepage CTA to lead with /search; add quick-start link and live stat"
+git push
+```
