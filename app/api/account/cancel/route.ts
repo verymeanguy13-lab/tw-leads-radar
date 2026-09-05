@@ -53,99 +53,116 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const sql = db();
-  const userRows = await sql`SELECT id FROM users WHERE email = ${session.user.email}`;
-  const userId = userRows[0]?.id as string | undefined;
-  if (!userId) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
+  // 2026-09-05: wrapped the rest of this route in a top-level try/catch,
+  // matching the same fix just made to GET /api/account (see that
+  // route's own comment on why) — the two queries below were previously
+  // unguarded, so a failure in either (a missing column, an RLS issue,
+  // anything) would have crashed with the same opaque, empty-body 500
+  // Next.js/Vercel returns for an uncaught exception in production,
+  // instead of a real JSON error. The three try/catch blocks already
+  // below this (NewebPay AlterStatus, Paddle cancel) are unchanged —
+  // this just extends the same safety net to what wasn't covered.
+  try {
+    const sql = db();
+    const userRows = await sql`SELECT id FROM users WHERE email = ${session.user.email}`;
+    const userId = userRows[0]?.id as string | undefined;
+    if (!userId) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
 
-  const subRows = await sql`
-    SELECT paddle_subscription_id, newebpay_period_no, newebpay_merchant_order_no
-    FROM subscriptions
-    WHERE user_id = ${userId} AND status = 'active'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  const sub = subRows[0] as
-    | {
-        paddle_subscription_id: string | null;
-        newebpay_period_no: string | null;
-        newebpay_merchant_order_no: string | null;
-      }
-    | undefined;
+    const subRows = await sql`
+      SELECT paddle_subscription_id, newebpay_period_no, newebpay_merchant_order_no
+      FROM subscriptions
+      WHERE user_id = ${userId} AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const sub = subRows[0] as
+      | {
+          paddle_subscription_id: string | null;
+          newebpay_period_no: string | null;
+          newebpay_merchant_order_no: string | null;
+        }
+      | undefined;
 
-  const hasAnyProcessorId =
-    sub && (sub.paddle_subscription_id || sub.newebpay_period_no || sub.newebpay_merchant_order_no);
+    const hasAnyProcessorId =
+      sub && (sub.paddle_subscription_id || sub.newebpay_period_no || sub.newebpay_merchant_order_no);
 
-  if (!sub || !hasAnyProcessorId) {
-    return NextResponse.json(
-      { error: "No active subscription to cancel" },
-      { status: 400 }
-    );
-  }
+    if (!sub || !hasAnyProcessorId) {
+      return NextResponse.json(
+        { error: "No active subscription to cancel" },
+        { status: 400 }
+      );
+    }
 
-  if (!sub.paddle_subscription_id && !sub.newebpay_period_no && sub.newebpay_merchant_order_no) {
-    return NextResponse.json(
-      {
-        error:
-          "此訂閱為年繳一次性付款，無自動續約機制，故無需取消；服務將持續至已付費期間結束後自動停止。",
-      },
-      { status: 400 }
-    );
-  }
+    if (!sub.paddle_subscription_id && !sub.newebpay_period_no && sub.newebpay_merchant_order_no) {
+      return NextResponse.json(
+        {
+          error:
+            "此訂閱為年繳一次性付款，無自動續約機制，故無需取消；服務將持續至已付費期間結束後自動停止。",
+        },
+        { status: 400 }
+      );
+    }
 
-  if (sub.newebpay_period_no) {
-    try {
-      const result = await alterNewebpayPeriodStatus(sub.newebpay_period_no, "terminate");
-      if (!result.success) {
-        console.error("NewebPay AlterStatus returned non-success:", result);
+    if (sub.newebpay_period_no) {
+      try {
+        const result = await alterNewebpayPeriodStatus(sub.newebpay_period_no, "terminate");
+        if (!result.success) {
+          console.error("NewebPay AlterStatus returned non-success:", result);
+          return NextResponse.json(
+            { error: "Cancellation failed — please try again or contact support" },
+            { status: 502 }
+          );
+        }
+        // No `scheduled_change`-style object comes back from NewebPay the
+        // way Paddle's cancel response has one, and there's no live read
+        // to check "is a cancellation already pending" later either — so
+        // `canceled_at` is set here as this app's own record of that,
+        // read back by GET /api/account (see db/schema.sql's comment on
+        // this column). `effectiveAt` is read from `current_period_end`
+        // (already correct, set by the last successful-charge notify),
+        // not touched by this UPDATE, so the account page can display the
+        // same "服務將持續至" date it already shows for Paddle.
+        const periodRows = await sql`
+          UPDATE subscriptions
+          SET canceled_at = now()
+          WHERE newebpay_period_no = ${sub.newebpay_period_no}
+          RETURNING current_period_end
+        `;
+        return NextResponse.json({
+          success: true,
+          scheduledCancellation: true,
+          effectiveAt: periodRows[0]?.current_period_end ?? null,
+        });
+      } catch (err) {
+        console.error("Failed to cancel NewebPay subscription:", err);
         return NextResponse.json(
           { error: "Cancellation failed — please try again or contact support" },
           { status: 502 }
         );
       }
-      // No `scheduled_change`-style object comes back from NewebPay the
-      // way Paddle's cancel response has one, and there's no live read
-      // to check "is a cancellation already pending" later either — so
-      // `canceled_at` is set here as this app's own record of that,
-      // read back by GET /api/account (see db/schema.sql's comment on
-      // this column). `effectiveAt` is read from `current_period_end`
-      // (already correct, set by the last successful-charge notify),
-      // not touched by this UPDATE, so the account page can display the
-      // same "服務將持續至" date it already shows for Paddle.
-      const periodRows = await sql`
-        UPDATE subscriptions
-        SET canceled_at = now()
-        WHERE newebpay_period_no = ${sub.newebpay_period_no}
-        RETURNING current_period_end
-      `;
+    }
+
+    try {
+      const result = await cancelPaddleSubscription(sub.paddle_subscription_id!);
       return NextResponse.json({
         success: true,
-        scheduledCancellation: true,
-        effectiveAt: periodRows[0]?.current_period_end ?? null,
+        scheduledCancellation: result.scheduled_change?.action === "cancel",
+        effectiveAt: result.scheduled_change?.effective_at ?? null,
       });
     } catch (err) {
-      console.error("Failed to cancel NewebPay subscription:", err);
+      console.error("Failed to cancel Paddle subscription:", err);
       return NextResponse.json(
         { error: "Cancellation failed — please try again or contact support" },
         { status: 502 }
       );
     }
-  }
-
-  try {
-    const result = await cancelPaddleSubscription(sub.paddle_subscription_id!);
-    return NextResponse.json({
-      success: true,
-      scheduledCancellation: result.scheduled_change?.action === "cancel",
-      effectiveAt: result.scheduled_change?.effective_at ?? null,
-    });
   } catch (err) {
-    console.error("Failed to cancel Paddle subscription:", err);
+    console.error("POST /api/account/cancel failed:", err);
     return NextResponse.json(
       { error: "Cancellation failed — please try again or contact support" },
-      { status: 502 }
+      { status: 500 }
     );
   }
 }

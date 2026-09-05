@@ -2443,3 +2443,21 @@ git add components/NewebpayCheckoutButton.tsx "app/(marketing)/page.tsx" "app/(m
 git commit -m "Fix checkout button getting stuck after a graceful error; re-add homepage/search no-card copy"
 git push
 ```
+
+## GET /api/account and POST /api/account/cancel now fail with a real error instead of crashing opaquely — 2026-09-05
+
+Direct follow-up, same day. The user ran the `canceled_at` migration (`npx tsx scripts/migrate-add-subscription-canceled-at.ts` - output confirmed: "Migration complete", against her real database using the same env-loading pattern every other migration script in `scripts/` already relies on, which have all worked before) and hard-refreshed - `/account` still showed the same "無法載入帳戶資訊，請重新整理頁面" failure. Checked directly: calling `fetch('/api/account')` from the live page's own console returned **status 500 with a completely empty response body** - not one of this route's own `NextResponse.json({error: ...})` calls (those always carry a body), but Next.js/Vercel's generic handler for an uncaught exception, which strips the real error before it reaches the client in production. That means the migration succeeding doesn't actually rule out "column still doesn't exist" (wrong database, wrong environment) - it just means there's no way to tell from the browser anymore, since neither this route's original code nor the browser network panel exposes what actually threw.
+
+**Real, independent bug found and fixed here, regardless of what the underlying cause turns out to be:** `GET /api/account`'s two main queries (fetching the user row, then the subscription row) had no error handling at all - only the trailing `getPaddleSubscription()` call was ever wrapped in try/catch. Any failure in either query - this `canceled_at` issue, an RLS problem, anything - crashes the whole route with that same opaque, empty-body 500, with nothing for anyone (the user, or whoever's debugging this next) to go on. `POST /api/account/cancel` had the identical gap in its own two lead queries (its three downstream try/catches - NewebPay AlterStatus, Paddle cancel - were already fine). Fixed both by wrapping the previously-unguarded query logic in each route in its own top-level try/catch, `console.error`-logging the real error (so it now reaches Vercel's function logs, where it didn't meaningfully before) and returning an actual JSON error body with a real status code instead of an empty crash. This doesn't fix whatever is still causing the account page to fail - the next real step is checking Vercel's runtime logs (or now, the JSON body this route returns) for the actual thrown error - but it turns "silently broken with no diagnostic trail" into "broken with a clear reason," which is what should have been there from the start.
+
+**Verified:** `npx tsc --noEmit` (clean), `npx eslint` on both files (clean), full `npx eslint .` (same 10 pre-existing unrelated errors as every round this session, nothing new).
+
+**Already written to the user's real local repo and verified byte-for-byte:** `app/api/account/route.ts`, `app/api/account/cancel/route.ts`.
+
+**Still open:** the actual root cause of the `/account` 500 is not yet identified - waiting on either Vercel's runtime logs or this fix's own new JSON error body (once deployed) to say what's really throwing.
+
+```
+git add "app/api/account/route.ts" "app/api/account/cancel/route.ts" architecture.md
+git commit -m "Make account routes fail with a real error instead of an opaque 500"
+git push
+```
