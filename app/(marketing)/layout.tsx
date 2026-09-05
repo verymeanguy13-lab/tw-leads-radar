@@ -13,6 +13,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
           {"\u65b0\u516c\u53f8\u5feb\u5831"}
         </Link>
         <div className="flex gap-6 items-center text-sm">
+          <Link href="/search">{"\u514d\u8cbb\u67e5\u8a62"}</Link>
           <Link href="/pricing">{"\u5b9a\u50f9"}</Link>
           <Link
             href={loggedIn ? "/searches" : "/login"}

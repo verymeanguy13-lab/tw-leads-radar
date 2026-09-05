@@ -2029,3 +2029,30 @@ git push
 ```
 
 Before running either scraper against the real database: run `npx tsx scripts/migrate-add-prospect-contacts.ts` first (needs `DATABASE_URL` set, same as every other `migrate-add-*` script), and if Playwright's browser binary was never installed on this machine, `npx playwright install chromium` one time first (same one-time setup `scripts/refresh-industry-csv.ts` already documented needing).
+
+## Public, no-login search with masked results — 2026-09-05
+
+Per your request ("can you redesign my site so it's more open? one doesn't need to log in to search but the search results are redacted like this?", with a pasted sample of a competitor's redacted results), added a new public search page that requires no account: `/search`, linked from the marketing nav as "免費查詢".
+
+**How it works:** a plain server-rendered page (`app/(marketing)/search/page.tsx`) takes a company-name keyword (minimum 2 characters — an empty or 1-character query renders only the form, never a full listing) and an optional 縣市 filter, runs one capped `SELECT` (20 rows, no pagination) against `companies`, and masks three fields before they're ever put into the returned markup: 統一編號, 公司名稱, and 負責人姓名. There is no unmasked API route behind this page — masking happens inside the same server component that reads the database, in `lib/masking.ts`.
+
+**Masking rules** (`lib/masking.ts`):
+- 統一編號: shown as `***` + the last 5 of its 8 digits. Reverse-engineered from your pasted sample — every one of the ~30 examples matched this exactly, no exceptions.
+- 負責人姓名: keep character 1, replace character 2 with a single `*`, keep the rest unchanged. Also 100% consistent across your sample, including Western names transliterated into the Chinese filing ("A*bert Yuen", "S*even John McNaught") — it's a plain string-index rule, not language-aware, which is exactly why it reproduced every example correctly.
+- 公司名稱: **not** a reverse-engineered clone of the competitor's sample — their own masking depth there was inconsistent (some rows masked a 2-character prefix, others masked nearly the whole distinctive name), so rather than guess at a pattern that didn't actually hold, this uses its own simple rule instead: keep the legal-entity suffix (股份有限公司, 有限公司, 工作室, etc.) unmasked, mask everything before it except the first character. This is a UX/teaser decision, not a legal requirement — the underlying registry data is already public under PDPA Article 19(7), the same basis the rest of this product relies on.
+
+**Freshness and suppression, unchanged from every other read path:** the public page applies the exact same 30-day gate the free tier gets (`entity_type='company'` rows need `registration_date` 30+ days old; `entity_type='business'` is exempt at every tier, same as `lib/matching/engine.ts`), and excludes `suppressed_at IS NOT NULL` rows. So an anonymous visitor never sees data fresher than a free signed-up account already sees — this page only adds a restriction (masking) on top of the free tier's view, it never gives away something the paid tiers are meant to gate.
+
+**Anti-scraping note, honestly flagged:** there is no rate-limiter anywhere in this codebase yet (checked — nothing exists for any route). The only protections here are the 2-character minimum before a query runs and the hard 20-row cap with no pagination. That's a real gap if this page gets scraped hard; a proper fix (e.g. Vercel/Cloudflare rate limiting by IP) is a follow-up, not something built tonight.
+
+**Verification:** ran through the same isolated-clone pipeline as every other feature this session (`npx next typegen`, `npx tsc --noEmit`, `npx eslint`) — clean, no new errors introduced (the handful of pre-existing lint errors elsewhere in the repo — `any` types, a couple of React purity/effect warnings — are untouched and predate this change).
+
+**Already written to your real local repo** via the file bridge and verified byte-for-byte: `lib/masking.ts` (new), `app/(marketing)/search/page.tsx` (new), `app/(marketing)/layout.tsx` (one added nav line, diffed against your on-disk copy first — no other changes picked up).
+
+**Housekeeping:** the earlier "Sessions 25-26" commit example above still has the same unquoted-parentheses bug that broke your terminal — don't run it as written. Combined, corrected PowerShell-safe commands for everything still uncommitted (Sessions 25-26 + this search feature):
+
+```
+git add db/schema.sql scripts/migrate-add-prospect-contacts.ts scripts/scrape-bookkeepers.ts scripts/scrape-cpa-firms.ts lib/prospecting/ lib/masking.ts components/ProspectDoNotContactToggle.tsx architecture.md "app/(app)/admin/prospects/page.tsx" "app/api/admin/prospects/[id]/route.ts" "app/api/admin/prospects/export/route.ts" "app/(marketing)/search/page.tsx" "app/(marketing)/layout.tsx"
+git commit -m "Sessions 25-26 (Prospect Directory) + public masked search page"
+git push
+```
