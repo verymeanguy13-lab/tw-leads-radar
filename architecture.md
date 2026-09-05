@@ -2292,3 +2292,23 @@ git add "app/(marketing)/search/page.tsx" architecture.md
 git commit -m "Un-collapse search filters per feedback; add landing headline with chosen taglines"
 git push
 ```
+
+## Notification-cadence sales copy on the landing pages — 2026-09-05
+
+Asked for "better sales stuff on the landing page. like drawing people for daily notifications" - i.e. actual conversion-oriented copy, not just functional description, specifically nudging toward the daily-cadence plan (Plan C／方案C, NT$1,300/月, business tier).
+
+The angle: cadence is now the real differentiator between the three tiers, since freshness and redaction no longer vary by plan (see the "redaction is now the only free-tier gate" entry above - search itself is current and the masking scope is the same regardless of cadence). Neither landing surface made that explicit before; the homepage's old feature grid had one generic line ("依方案週期主動通知") and `/search`'s only upsell mention was a single sentence at the very bottom, after results.
+
+**`app/(marketing)/page.tsx`:** new section between the hero and the existing feature grid - three cards (免費／方案B／方案C) with real prices matching `lib/tiers.ts`'s `TIER_PRICING` and the pricing page exactly, each with one line saying what its cadence means in practice. Plan C's card is visually distinct (accent border, a "業務團隊首選" badge) and its copy claims "比免費方案快約 30 倍搶得第一次接觸機會" - not a made-up number: `lib/email/digest.ts`'s `CADENCE_DUE_AFTER_DAYS` already defines monthly=28, weekly=6.5, daily=0.9, so 28/0.9 ≈ 31 and 28/6.5 ≈ 4.3 are the actual ratios this product's own scheduling logic uses, rounded down to "30倍"/"4倍" for honesty rather than rounding up for a bigger number. The section links to `/pricing` rather than duplicating full plan feature lists, keeping that page the one source of truth for what each plan includes.
+
+**`app/(marketing)/search/page.tsx`:** the same pitch, reworded slightly, placed as a bordered callout right after the existing redaction-explanation paragraph and before the search form - shown only to non-paid viewers (anonymous and free tier; a business-tier viewer already has daily, and upselling pro→business specifically wasn't tackled in this pass). Placed here, not just on the homepage, because a visitor already running searches on `/search` has already seen real data and is a warmer prospect than someone who hasn't yet - this is the highest-intent moment on the site to make the cadence pitch. The existing bottom-of-results upsell line (unmasked data, multiple saved searches, CSV export, "更頻繁的通知頻率") was left as-is rather than also rewritten to repeat the same 30x claim - three near-identical upgrade pitches stacked on one page would read as spam rather than persuasion.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint` on both touched files and a full `npx eslint .` - same 10 pre-existing unrelated errors, nothing new. `npm run build` passes typecheck/module-resolution, fails only afterward on the same sandbox-only Google Fonts restriction every build check this session has hit.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/page.tsx`, `app/(marketing)/search/page.tsx`.
+
+```
+git add "app/(marketing)/page.tsx" "app/(marketing)/search/page.tsx" architecture.md
+git commit -m "Add notification-cadence sales copy to homepage and /search"
+git push
+```

@@ -45,6 +45,72 @@ export default function LandingPage() {
         </p>
       </section>
 
+      {/* 2026-09-05: notification-cadence sales section, added on request
+          ("i want better sales stuff on the landing page. like drawing
+          people for daily notifications"). Cadence is the real
+          differentiator between the three tiers now that freshness and
+          redaction no longer vary by plan the way they used to (free/
+          anonymous search is current for everyone - see architecture.md's
+          2026-09-05 "redaction is now the only free-tier gate" entry) -
+          this section makes that differentiator the explicit pitch
+          instead of leaving it as one line inside the old feature grid
+          below. The "30倍"/"4倍" claims are not made up: they're the
+          actual ratios between lib/email/digest.ts's
+          CADENCE_DUE_AFTER_DAYS values (daily 0.9, weekly 6.5, monthly
+          28 - 28/0.9 ≈ 31, 28/6.5 ≈ 4.3), so the copy stays honest and
+          matches what the product actually does. Prices match
+          lib/tiers.ts's TIER_PRICING and app/(marketing)/pricing/page.tsx
+          exactly - this section links to /pricing rather than duplicating
+          full plan details, so there's still one source of truth for
+          what each plan includes. */}
+      <section className="px-8 py-16">
+        <div className="max-w-4xl mx-auto text-center mb-10">
+          <h2 className="text-2xl font-bold mb-2">選擇符合你業務步調的通知頻率</h2>
+          <p className="text-secondary text-sm">
+            新公司每天都在登記——你多久收到通知，決定你比同業快多少。
+          </p>
+        </div>
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="border border-default rounded-lg p-6 text-center">
+            <p className="text-sm font-semibold mb-1">免費方案</p>
+            <p className="text-secondary text-sm mb-4">每月一次摘要，適合先觀察市場動態。</p>
+            <p className="text-xl font-bold">NT$0</p>
+          </div>
+          <div className="border border-default rounded-lg p-6 text-center bg-card">
+            <p className="text-sm font-semibold mb-1">方案B｜週報方案</p>
+            <p className="text-secondary text-sm mb-4">
+              每週摘要，掌握新客戶的速度比免費方案快約 4 倍。
+            </p>
+            <p className="text-xl font-bold">NT$600 / 月</p>
+          </div>
+          <div
+            className="border-2 rounded-lg p-6 text-center bg-card relative"
+            style={{ borderColor: "var(--accent)" }}
+          >
+            <span
+              className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs text-white px-3 py-1 rounded-full whitespace-nowrap"
+              style={{ backgroundColor: "var(--accent)" }}
+            >
+              業務團隊首選
+            </span>
+            <p className="text-sm font-semibold mb-1">方案C｜每日方案</p>
+            <p className="text-secondary text-sm mb-4">
+              每日摘要，新公司登記隔天就送到你手上——比免費方案快約 30 倍搶得第一次接觸機會。
+            </p>
+            <p className="text-xl font-bold">NT$1,300 / 月</p>
+          </div>
+        </div>
+        <div className="text-center mt-8">
+          <Link
+            href="/pricing"
+            className="inline-block underline text-sm"
+            style={{ color: "var(--accent)" }}
+          >
+            查看完整方案內容與功能比較 →
+          </Link>
+        </div>
+      </section>
+
       <section className="px-8 py-16 bg-card">
         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>

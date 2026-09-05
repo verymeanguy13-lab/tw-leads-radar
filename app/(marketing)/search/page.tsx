@@ -400,6 +400,30 @@ export default async function PublicSearchPage({
         </p>
       )}
 
+      {/* 2026-09-05: notification-cadence sales callout, same request as
+          the homepage's cadence section (see that file's comment for the
+          reasoning and the honesty of the "30倍" figure) - placed here
+          too because a visitor already running searches is a warmer
+          prospect than a homepage visitor who hasn't seen real data yet.
+          Only shown to non-paid viewers - a business-tier visitor
+          already has daily, and this isn't trying to upsell pro→business
+          nuance in this pass. */}
+      {!isPaid && (
+        <div
+          className="border rounded p-4 mb-6 bg-card"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <p className="text-sm font-medium mb-1">多久收到通知，決定你比同業快多少</p>
+          <p className="text-xs text-secondary mb-2">
+            免費方案每月通知一次；方案C每日通知，新公司登記隔天就送達你的信箱，比免費方案快約 30
+            倍搶得第一次接觸機會。
+          </p>
+          <Link href="/pricing" className="text-sm underline" style={{ color: "var(--accent)" }}>
+            查看每日通知方案 →
+          </Link>
+        </div>
+      )}
+
       <h2 className="text-lg font-semibold mb-3">查詢公司登記資料</h2>
 
       <form method="get" className="space-y-4 mb-6 border-b border-default pb-6">
