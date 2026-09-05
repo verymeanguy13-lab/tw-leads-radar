@@ -9,7 +9,9 @@ import AccountPageClient from "./AccountPageClient";
 // via getServerSession(), not client-side useSession(). This app has
 // no <SessionProvider> wrapping it anywhere, so useSession() would
 // crash; the interactive parts live in AccountPageClient.tsx instead,
-// which receives userId/userEmail as plain props.
+// which receives userId as a plain prop. (userEmail is still looked up
+// here for the users-table query below, just no longer passed down —
+// see AccountPageClient.tsx's own comment on why, 2026-09-05.)
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +26,5 @@ export default async function AccountPage() {
     userId = rows[0]?.id ?? null;
   }
 
-  return <AccountPageClient userId={userId} userEmail={userEmail} />;
+  return <AccountPageClient userId={userId} />;
 }
