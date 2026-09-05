@@ -17,12 +17,35 @@ import NewebpayCheckoutButton from "@/components/NewebpayCheckoutButton";
 // same swap on app/(marketing)/pricing/page.tsx (see that file's own
 // comment for why and its real, immediate consequence: no one can
 // actually complete checkout until a real 藍新 merchant account exists).
-// The "降級至方案 B"/"升級至方案 C" buttons further down and the
-// "更新付款方式" link are UNCHANGED and still Paddle-only (change-plan
-// and update-payment-method have no NewebPay equivalent built) - they
-// only ever render for an existing paid subscriber (`info.tier !==
-// "free"`), which today can only mean a legacy Paddle subscriber, since
-// the only reachable new-purchase path is NewebPay now.
+//
+// 2026-09-05, later the same day: the "降級至方案 B"/"升級至方案 C"
+// change-plan buttons and the "更新付款方式" link that used to live here
+// are REMOVED, not just left pointing at Paddle. Direct instruction from
+// the user, reiterated explicitly after she noticed her own (sandbox)
+// Paddle test subscription still surfaced these Paddle-backed controls
+// on the account page: hide Paddle from every user-visible/clickable
+// surface, not only the new-purchase checkout entry point handled
+// earlier today. There is no NewebPay equivalent to "put in its place"
+// for either control - `/api/account/change-plan/route.ts` only ever
+// called Paddle's REST API, and NewebPay has no update-payment-method
+// flow at all in this integration - so the honest treatment is removing
+// them, not relabeling them. `/api/account/change-plan/route.ts` itself
+// is left untouched and still fully functional, same "keep the old
+// processor's code working, just make it unreachable from the UI"
+// precedent as CheckoutButton.tsx/lib/paddle-api.ts already established
+// for the checkout button swap. Cancellation is NOT affected - it was
+// already made processor-agnostic earlier today (see
+// app/api/account/cancel/route.ts) and works identically for Paddle and
+// NewebPay subscribers, so there's nothing Paddle-specific about it to
+// hide.
+//
+// Real, stated-and-acknowledged consequence: if any OTHER real
+// (non-sandbox) Paddle subscriber exists on this site, they lose their
+// self-service way to update their card or change plans - they'd need
+// to contact support instead of clicking a button. Cancellation still
+// works fine for them either way. Flagged to the user before making
+// this change; she confirmed everything is currently testing/sandbox
+// and asked for this regardless.
 //
 // Known limitation, not built in this session: there's no "undo
 // cancellation" button. Once someone cancels (scheduled for period
@@ -138,27 +161,6 @@ export default function AccountPageClient({ userId }: Props) {
     }
   }
 
-  async function handleChangePlan(targetTier: "pro" | "business", cadence: "monthly" | "yearly") {
-    setActionPending(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/account/change-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetTier, cadence }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMessage(data.error || "\u8b8a\u66f4\u65b9\u6848\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66");
-      } else {
-        setMessage("\u65b9\u6848\u5df2\u66f4\u65b0\u3002");
-        await loadAccount();
-      }
-    } finally {
-      setActionPending(false);
-    }
-  }
-
   if (loading) {
     return <div className="px-8 py-16 max-w-2xl mx-auto">{"\u8f09\u5165\u4e2d\u2026"}</div>;
   }
@@ -250,32 +252,6 @@ export default function AccountPageClient({ userId }: Props) {
         </div>
       )}
 
-      {info.tier === "pro" && info.autoRenew && !info.scheduledCancellation && (
-        <div className="border border-default rounded-lg p-6 mb-6">
-          <button
-            type="button"
-            disabled={actionPending}
-            onClick={() => handleChangePlan("business", "monthly")}
-            className="block w-full text-center border border-default rounded px-4 py-2 disabled:opacity-50"
-          >
-            {"\u5347\u7d1a\u81f3\u65b9\u6848 C"}
-          </button>
-        </div>
-      )}
-
-      {info.tier === "business" && info.autoRenew && !info.scheduledCancellation && (
-        <div className="border border-default rounded-lg p-6 mb-6">
-          <button
-            type="button"
-            disabled={actionPending}
-            onClick={() => handleChangePlan("pro", "monthly")}
-            className="block w-full text-center border border-default rounded px-4 py-2 disabled:opacity-50"
-          >
-            {"\u964d\u7d1a\u81f3\u65b9\u6848 B"}
-          </button>
-        </div>
-      )}
-
       {info.tier !== "free" && !info.autoRenew && (
         // One-time yearly purchase (MPG/ATM-CVS checkout) - no recurring
         // commitment, so no cancel button and no payment-method link.
@@ -287,28 +263,20 @@ export default function AccountPageClient({ userId }: Props) {
         </div>
       )}
 
-      {info.tier !== "free" && info.autoRenew && (
-        <div className="border border-default rounded-lg p-6 space-y-3">
-          {info.updatePaymentMethodUrl && (
-            <a
-              href={info.updatePaymentMethodUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full text-center border border-default rounded px-4 py-2"
-            >
-              {"\u66f4\u65b0\u4ed8\u6b3e\u65b9\u5f0f"}
-            </a>
-          )}
-          {!info.scheduledCancellation && (
-            <button
-              type="button"
-              disabled={actionPending}
-              onClick={handleCancel}
-              className="block w-full text-center text-secondary hover:underline disabled:opacity-50"
-            >
-              {"\u53d6\u6d88\u8a02\u95b1"}
-            </button>
-          )}
+      {info.tier !== "free" && info.autoRenew && !info.scheduledCancellation && (
+        // 2026-09-05: the "\u66f4\u65b0\u4ed8\u6b3e\u65b9\u5f0f" link that used to sit here
+        // (linking to info.updatePaymentMethodUrl, a Paddle-hosted page)
+        // is removed - see this file's header comment. Cancel is
+        // unaffected; it already works identically for both processors.
+        <div className="border border-default rounded-lg p-6">
+          <button
+            type="button"
+            disabled={actionPending}
+            onClick={handleCancel}
+            className="block w-full text-center text-secondary hover:underline disabled:opacity-50"
+          >
+            {"\u53d6\u6d88\u8a02\u95b1"}
+          </button>
         </div>
       )}
     </div>

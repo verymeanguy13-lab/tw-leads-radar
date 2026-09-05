@@ -2461,3 +2461,31 @@ git add "app/api/account/route.ts" "app/api/account/cancel/route.ts" architectur
 git commit -m "Make account routes fail with a real error instead of an opaque 500"
 git push
 ```
+
+## Root cause of the /account 500 found; Paddle removed from the account page too — 2026-09-05
+
+Two follow-ups, same day, once the account page was loading again.
+
+**Root cause, for the record:** the actual error (from Vercel's runtime logs, which the previous entry's fix made possible to get) was `column "newebpay_period_no" does not exist` - not `canceled_at`. That column comes from a DIFFERENT, earlier migration (`scripts/migrate-add-newebpay-fields.ts`, from the original 2026-09-04 NewebPay schema round, predating this whole session) that was ALSO never run against the real database. The `canceled_at` migration the user ran was real and necessary, just not the actual blocker - Postgres reported the first missing column it hit parsing the query, and `newebpay_period_no` appears earlier in the `SELECT` list. Given two schema migrations from two different, unrelated rounds both turned out to have never been run, recommended (in chat, not a code change) that the user run every remaining `scripts/migrate-*.ts` script now - they're all additive/idempotent by their own header comments, safe to re-run even if already applied.
+
+**Paddle removed from the account-management UI, not just the checkout button - direct, explicit follow-up instruction.** Once the account page loaded again, the user noticed her own account (an existing Paddle sandbox subscription, predating any of today's NewebPay work) still showed Paddle-backed controls - the "更新付款方式" link (→ Paddle's hosted page) and the upgrade/downgrade buttons (→ `/api/account/change-plan`, Paddle-only). Explained this was intentional and scoped deliberately in the earlier "hide Paddle" round - hiding Paddle was scoped to the *new-purchase* checkout entry point only, existing subscribers' management was explicitly left alone since there's no NewebPay equivalent to put in its place. The user's response: everything is currently testing/sandbox, that distinction isn't relevant to her, and she wants Paddle hidden from the account page too, restating the original instruction.
+
+Removed, from `app/(app)/account/AccountPageClient.tsx`:
+- The "更新付款方式" link (`info.updatePaymentMethodUrl`) - no NewebPay equivalent exists for this at all, so it's removed outright rather than relabeled.
+- The "降級至方案 B"/"升級至方案 C" change-plan buttons and their `handleChangePlan()` handler - `/api/account/change-plan/route.ts` only ever called Paddle's REST API; there was no NewebPay path to fall back to.
+
+Both routes/functions these called (`app/api/account/change-plan/route.ts`, Paddle's update-payment-method flow) are left untouched and still fully functional server-side - same "keep the old processor's code working, just make it unreachable from the UI" precedent already established for `CheckoutButton.tsx`/`lib/paddle-api.ts` in the earlier round. This also incidentally closes the "pre-existing gap" flagged in the yearly-checkout round's own entry (a NewebPay-monthly subscriber's change-plan buttons hitting a Paddle-only route and erroring) - with the buttons gone entirely, there's nothing left to hit that gap.
+
+**Cancellation is unaffected** - it was already made processor-agnostic in an earlier round today and works identically for Paddle and NewebPay subscribers, so there was nothing Paddle-specific about it to remove.
+
+**Real, stated consequence, acknowledged by the user before this was made:** if any other real (non-sandbox) Paddle subscriber exists on this site, they now have no self-service way to update their card or change plans - they'd need to contact support instead. Cancellation still works fine for them regardless.
+
+**Verified:** `npx tsc --noEmit` (clean), `npx eslint` on the touched file (clean - the same single pre-existing `react-hooks/set-state-in-effect` error as every round, at a shifted line), full `npx eslint .` (same 10 pre-existing unrelated errors, nothing new).
+
+**Already written to the user's real local repo and verified byte-for-byte:** `app/(app)/account/AccountPageClient.tsx`.
+
+```
+git add "app/(app)/account/AccountPageClient.tsx" architecture.md
+git commit -m "Remove Paddle-only account-management controls (update payment method, change plan)"
+git push
+```
