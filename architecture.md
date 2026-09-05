@@ -2149,3 +2149,25 @@ git add lib/rate-limit.ts scripts/migrate-add-search-rate-limits.ts lib/tiers.ts
 git commit -m "Fix missing rate-limit files; free tier cadence weekly -> monthly"
 git push
 ```
+
+## /search now has full filter parity with the saved-search form, plus a save-for-notifications bridge — 2026-09-05
+
+The live site is up and correctly showing the tier-gated redaction (confirmed from a screenshot of taiwanleads.com/search) — but the user pointed out /search was still too narrow: it only had two filters (keyword + a single region), while the authenticated saved-search form (`/searches/new`) has five (industry codes, multiple regions, capital min/max, entity type, keyword). Her ask: "I want the anonymous user being able to set conditions like everyone else and search and get redacted results. just like free tier users, except free tier users has to log in to get free monthly notifications."
+
+**Filter parity.** `runSearch()` in `app/(marketing)/search/page.tsx` now mirrors `lib/matching/engine.ts`'s `matchSearch()` field-for-field: industry code overlap (`industry_codes && ...`), regions via `= ANY(...)`, capital min/max, entity type, keyword `ILIKE` — the exact same filter logic every saved search already runs, not a simplified subset. The form gained industry-code checkboxes (11 categories, same list as `/searches/new`) and switched regions from a single `<select>` to multi-select checkboxes, matching that form's layout. Capital min/max and the company/business/both radio were added too. All still plain GET query params — no client-side JS required to search, consistent with how this page started.
+
+Since almost every field is now optional, the old "keyword must be 2+ characters" gate no longer made sense as the only anti-scraping control on when a query runs at all — a region-only or industry-only search is a completely reasonable thing to want, matching what a real saved search supports. Replaced it with `hasFilters`: true if keyword is 2+ characters OR at least one region OR at least one industry code OR a capital bound is set. An empty form still never runs a "browse everything" query. The 20-row cap, no pagination, and the rate limiter for anonymous requests are all unchanged and still apply regardless of which filters are used.
+
+**The notification bridge.** Added `components/SaveSearchButton.tsx`, shown under the results only when logged in (any tier). One click POSTs the exact filters just searched to the existing `POST /api/searches` route with `cadence: "monthly"` — reusing all of that route's existing validation, tier gating, and the 1-saved-search free-tier limit, not a new endpoint — and redirects to the new saved search's results page on success. Always requests "monthly" specifically, never branching on tier for which cadence to request, since monthly is the one cadence every tier (free, pro, business) is allowed to use (see the 2026-09-05 cadence-policy entry above) — a pro/business user who wants weekly or daily instead still has the full `/searches/new` form for that. Anonymous visitors see a plain "登入或免費註冊後即可儲存此搜尋條件，每月為您寄送摘要" message instead of the button, since there's no account to attach a saved search to — this is the literal answer to "free tier users has to log in to get free monthly notifications."
+
+One real limitation, called out directly in the code rather than hidden: a search saved this way gets an auto-generated name (the keyword, or the region list, or a date-stamped placeholder if neither was set) since asking the visitor to name it before showing results would add friction the whole point of an ad hoc search is meant to avoid. There's no rename UI anywhere in the app yet — same pre-existing limitation `/searches/new`'s own saved searches already have, not something new this introduced.
+
+**Verified:** `npx next typegen`, `npx tsc --noEmit`, `npx eslint .`, and a full `npm run build` (module-resolution stage passes cleanly; the build only fails afterward on a Google Fonts fetch, which is this sandbox's own network restriction, not a real issue on Vercel) — same 10 pre-existing unrelated lint errors, nothing new.
+
+**Already written to your real local repo and verified byte-for-byte:** `app/(marketing)/search/page.tsx` (rewritten), `components/SaveSearchButton.tsx` (new).
+
+```
+git add "app/(marketing)/search/page.tsx" components/SaveSearchButton.tsx architecture.md
+git commit -m "Full filter parity on /search + save-for-monthly-notifications bridge"
+git push
+```
