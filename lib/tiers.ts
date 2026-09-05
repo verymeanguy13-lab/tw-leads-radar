@@ -56,18 +56,45 @@ export const TIER_PRICING: Record<"pro" | "business", Record<"monthly" | "yearly
 };
 
 /**
- * Resolves a user's current tier from their subscription. Only an
- * `active` subscription grants paid-tier benefits - past_due, canceled,
- * or no subscription row at all (a brand-new signup) all fall back to
- * free. This means access is lost immediately on cancellation, not at
- * the end of the already-paid period - a deliberate simplification, not
- * an oversight; revisit if a grace period is ever wanted.
+ * Resolves a user's current tier from their subscription.
+ *
+ * 2026-09-05: added the `current_period_end` check below, replacing the
+ * previous pure-status check (which this comment used to describe as a
+ * deliberate simplification with no grace period). Reason: the pricing
+ * page now promises "付費方案可隨時取消，服務將持續至當期已付費週期結束"
+ * for BOTH payment processors, but only Paddle's cancellation path has a
+ * webhook-driven status change at the real period end
+ * (subscription.canceled). NewebPay's cancellation path
+ * (app/api/account/cancel/route.ts calling
+ * lib/newebpay-api.ts's alterNewebpayPeriodStatus()) deliberately does
+ * NOT flip `status` immediately - it only stops future billing - so
+ * without this check, a NewebPay subscriber who cancels would keep
+ * `status = 'active'` forever (nothing else would ever change it) and
+ * get free paid access indefinitely. Checking `current_period_end` here
+ * instead of relying on a status flip fixes that using data both
+ * processors' webhooks/notify handlers already keep current, with no
+ * scheduled sweep job needed.
+ *
+ * This is harmless for Paddle's own flow: `current_period_end` is
+ * refreshed on every subscription.updated event (including renewals),
+ * so it's always >= now() for a genuinely active subscription, and
+ * Paddle's real subscription.canceled event still flips `status` at
+ * actual period end regardless - this check is redundant-but-safe there,
+ * and would only matter as extra protection if that webhook were ever
+ * delayed.
+ *
+ * `current_period_end IS NULL` still passes (treated as "not tracked,
+ * don't restrict") - matches this function's original bias toward
+ * assuming access when data is missing. Both webhooks always set a real
+ * value from their first successful-charge notify, so this only affects
+ * old or malformed rows, not normal operation.
  */
 export async function getUserTier(userId: string): Promise<Tier> {
   const sql = db();
   const rows = await sql`
     SELECT tier FROM subscriptions
     WHERE user_id = ${userId} AND status = 'active'
+      AND (current_period_end IS NULL OR current_period_end >= now())
     ORDER BY created_at DESC
     LIMIT 1
   `;

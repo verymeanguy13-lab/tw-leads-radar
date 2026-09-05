@@ -37,6 +37,19 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     tier VARCHAR(20) NOT NULL CHECK (tier IN ('free', 'pro', 'business')) DEFAULT 'free',
     status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'past_due', 'canceled', 'none')) DEFAULT 'none',
     current_period_end TIMESTAMPTZ,
+    -- Added 2026-09-05: records when a NewebPay subscription's
+    -- cancellation was requested. Only used by the NewebPay path -
+    -- Paddle's cancellation state is read live from Paddle's own API
+    -- (getPaddleSubscription()'s scheduled_change field) each time, so
+    -- Paddle-based rows never set this. NewebPay's AlterStatus call
+    -- (lib/newebpay-api.ts's alterNewebpayPeriodStatus()) has no
+    -- equivalent live "is a cancellation pending" read, and deliberately
+    -- doesn't touch `status`/`current_period_end` on cancel (access
+    -- should continue until the already-paid period ends, matching
+    -- Paddle's behavior) - so app/api/account/route.ts needs this column
+    -- to know a NewebPay subscription already had cancellation
+    -- requested, distinct from one that's simply still running.
+    canceled_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
