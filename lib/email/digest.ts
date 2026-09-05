@@ -3,6 +3,14 @@ import { db } from "../db";
 import { formatCapital, formatDate } from "../utils";
 import { getUserTier } from "../tiers";
 import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH } from "../attribution";
+import {
+  maskUniformId,
+  maskCompanyName,
+  maskPersonName,
+  isNarrowResultSet,
+  maskCapitalToBracket,
+  maskRegistrationDateToWeek,
+} from "../masking";
 import type { Company } from "../../types/db";
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
@@ -149,10 +157,26 @@ function mapsUrl(name: string, address: string | null) {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
+// mask/narrow (2026-09-05, business-model change): this function
+// previously had NO masking option at all - every recipient, free tier
+// included, got the fully unmasked row (real uniform ID, real name,
+// real full address, a working Maps link built from the real name +
+// address). That was already inconsistent with the redaction promise
+// made on /search and on the pricing page before this change even
+// happened - free tier's search results and dashboard view were never
+// unmasked, but their email digests always were. Now that free tier's
+// search results are current (no more 30-day freshness gate - see
+// lib/matching/engine.ts and architecture.md's 2026-09-05 entry),
+// leaving digest emails unmasked would completely defeat the point:
+// the exact thing being protected against (a fresh, live lead) would
+// arrive by email unmasked regardless of what /search or the results
+// page do. `mask` applies the same three field masks used everywhere
+// else; `narrow` additionally coarsens capital/date, mirroring
+// lib/masking.ts's isNarrowResultSet() floor.
 function renderCompanyRow(
   c: Company,
   freshness: Map<string, string>,
-  options: { statusChangeNotice?: boolean } = {}
+  options: { statusChangeNotice?: boolean; mask?: boolean; narrow?: boolean } = {}
 ): string {
   const statusLabel = STATUS_LABEL[c.status] ?? c.status;
   const freshAt = c.source_dataset ? freshness.get(c.source_dataset) : undefined;
@@ -168,24 +192,47 @@ function renderCompanyRow(
     ? `<br/><span style="color:#b45309;font-size:12px;font-weight:600;">⚠ 狀態自加入追蹤後已變更</span>`
     : "";
 
+  const mask = options.mask ?? false;
+  const narrow = options.narrow ?? false;
+
+  const displayName = mask ? maskCompanyName(c.name) : c.name;
+  const displayUniformId = mask ? maskUniformId(c.uniform_id) : c.uniform_id;
+  const displayPerson = mask ? maskPersonName(c.responsible_person) : c.responsible_person;
+  const displayCapital = narrow ? maskCapitalToBracket(c.capital) : formatCapital(c.capital);
+  const displayDate = narrow
+    ? maskRegistrationDateToWeek(c.registration_date)
+    : formatDate(c.registration_date);
+
+  // Full street address + a Maps link built from the real name/address
+  // would each independently undo the three masked fields above - both
+  // are dropped entirely for a masked row, same as
+  // app/(app)/searches/[id]/page.tsx's masked view. address_region
+  // alone (already shown unmasked on /search too) stays visible.
+  const addressLine = mask
+    ? `${c.address_region ?? "-"}`
+    : `${c.address_region ?? "-"}　${c.address_raw ?? ""}`;
+  const mapsLine = mask
+    ? `<a href="${process.env.NEXTAUTH_URL}/pricing" style="color:#2563eb;">升級查看完整地址與地圖</a>`
+    : `<a href="${mapsUrl(c.name, c.address_raw)}" style="color:#2563eb;">Google 地圖查詢</a>`;
+
   return `
     <tr>
       <td style="padding:10px 0;border-bottom:1px solid #e2e5ea;">
-        <div style="font-weight:600;">${c.name}</div>
+        <div style="font-weight:600;">${displayName}</div>
         <div style="color:#6b7280;font-size:13px;">
-          統一編號：${c.uniform_id}　登記日期：${formatDate(c.registration_date)}
+          統一編號：${displayUniformId}　登記日期：${displayDate}
         </div>
         <div style="color:#6b7280;font-size:13px;">
-          ${c.address_region ?? "-"}　${c.address_raw ?? ""}
+          ${addressLine}
         </div>
         <div style="color:#6b7280;font-size:13px;">
-          負責人：${c.responsible_person ?? "-"}
+          負責人：${displayPerson ?? "-"}
         </div>
         <div style="color:#6b7280;font-size:13px;">
-          資本額：${formatCapital(c.capital)}　狀態：${statusLabel}${freshnessNote}${changeNotice}
+          資本額：${displayCapital}　狀態：${statusLabel}${freshnessNote}${changeNotice}
         </div>
         <div style="font-size:13px;margin-top:4px;">
-          <a href="${mapsUrl(c.name, c.address_raw)}" style="color:#2563eb;">Google 地圖查詢</a>
+          ${mapsLine}
         </div>
       </td>
     </tr>
@@ -202,19 +249,13 @@ function renderCompanyRow(
 export async function sendDigestForSearch(search: DueSearch): Promise<DigestSendResult> {
   const sql = db();
 
-  // Freshness-tier gating (same rule as lib/matching/engine.ts's
-  // matchSearch() and app/(app)/searches/[id]/page.tsx): free tier only
-  // gets entity_type='company' rows once companies.registration_date is
-  // 30+ days old (falling back to created_at when registration_date is
-  // NULL) - registration_date is the company's actual government
-  // registration date, not when our system happened to import the row,
-  // which matters a lot here since Session 20b's historical backfill
-  // bulk-inserted ~43,599 rows within one recent window (see
-  // matchSearch()'s comment for the full story of why created_at alone
-  // was wrong). Applied here too, not just at match-time, because
-  // matchSearch() only ever inserts into search_matches and never
-  // deletes - a row that matched before this gate existed, or before a
-  // downgrade, would otherwise still get emailed out.
+  // No freshness/tier gating here (removed 2026-09-05): a 30-day gate
+  // used to sit in both queries below, mirroring
+  // lib/matching/engine.ts's matchSearch(). Free tier now gets fully
+  // CURRENT matches in its digest email too - masking (isFreeTier,
+  // used further down to render each row) is the only thing that still
+  // differs by tier. See architecture.md's 2026-09-05 "redaction is now
+  // the only free-tier gate" entry.
   const tier = await getUserTier(search.userId);
   const isFreeTier = tier === "free";
 
@@ -223,7 +264,6 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
     FROM search_matches sm
     JOIN companies c ON c.uniform_id = sm.company_uniform_id
     WHERE sm.saved_search_id = ${search.id} AND sm.surfaced_in_digest = false
-      AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
       AND c.suppressed_at IS NULL
     ORDER BY c.registration_date DESC NULLS LAST
   `;
@@ -236,7 +276,6 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
       AND sm.surfaced_in_digest = true
       AND (c.status = 'dissolved' OR c.status = 'changed')
       AND c.status_updated_at > sm.surfaced_at
-      AND (c.entity_type = 'business' OR ${!isFreeTier} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
       AND c.suppressed_at IS NULL
     ORDER BY c.status_updated_at DESC
   `;
@@ -265,6 +304,16 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   );
   const freshness = await getDatasetFreshness(flaggedDatasets);
 
+  // See lib/masking.ts's isNarrowResultSet() comment - applies here the
+  // same way it does on /search and the results page: once this
+  // particular search's total match count (new + changed, before the
+  // render cap below) is this small, exact capital/date become
+  // identifying enough on their own to warrant coarsening, on top of
+  // the name/ID/person masking `mask` already applies below. Only
+  // matters for free tier - a paid recipient's email is never masked or
+  // coarsened.
+  const narrow = isFreeTier && isNarrowResultSet(newRows.length + changedRows.length);
+
   // Cap how many rows actually get rendered into the email body - added
   // 2026-08-28 after this hit Resend's 40MB size limit in production.
   // Root cause: the same day's registration_date backfill (see
@@ -284,9 +333,13 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   const newRowsToRender = newRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);
   const changedRowsToRender = changedRows.slice(0, MAX_RENDERED_ROWS_PER_SECTION);
 
-  const newRowsHtml = newRowsToRender.map((r) => renderCompanyRow(r, freshness)).join("");
+  const newRowsHtml = newRowsToRender
+    .map((r) => renderCompanyRow(r, freshness, { mask: isFreeTier, narrow }))
+    .join("");
   const changedRowsHtml = changedRowsToRender
-    .map((r) => renderCompanyRow(r, freshness, { statusChangeNotice: true }))
+    .map((r) =>
+      renderCompanyRow(r, freshness, { statusChangeNotice: true, mask: isFreeTier, narrow })
+    )
     .join("");
 
   const newOverflowCount = newRows.length - newRowsToRender.length;
@@ -353,6 +406,13 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   // unauthenticated - see that route's own comment for why that's safe.
   const unsubscribeUrl = `${process.env.NEXTAUTH_URL}/api/searches/${search.id}/unsubscribe`;
 
+  // Free-tier upsell (2026-09-05): only shown when this email's rows
+  // were actually masked - a paid recipient's email carries no mention
+  // of upgrading, since there's nothing to upgrade away from.
+  const upgradeNote = isFreeTier
+    ? `<p style="color:#6b7280;font-size:12px;margin-top:8px;">此通知內容已部分遮蔽（統一編號、公司名稱與負責人姓名）。<a href="${process.env.NEXTAUTH_URL}/pricing" style="color:#2563eb;">升級付費方案</a>即可收到完整未遮蔽的通知內容。</p>`
+    : "";
+
   const html = `
     <div style="font-family:sans-serif;color:#1a1d23;max-width:600px;">
       <h2 style="margin-bottom:4px;">「${search.name}」有 ${subjectSummary}</h2>
@@ -363,6 +423,7 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
           ? `<div style="color:#6b7280;font-size:12px;margin-top:16px;">${attributionHtml}</div>`
           : ""
       }
+      ${upgradeNote}
       <p style="color:#6b7280;font-size:12px;margin-top:24px;">
         登入查看完整結果：<a href="${process.env.NEXTAUTH_URL}/searches/${search.id}" style="color:#2563eb;">taiwanleads.com</a>
         　|

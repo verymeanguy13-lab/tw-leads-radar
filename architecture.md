@@ -2195,3 +2195,55 @@ git add "app/(marketing)/search/page.tsx" architecture.md
 git commit -m "Make /search's zero-results state visible and echo the applied filters"
 git push
 ```
+
+## Redaction is now the only free-tier gate — the 30-day freshness gate is gone — 2026-09-05
+
+After the previous entry's fix landed, the user noticed anonymous search results lagged logged-in (paid) results by much more than the nominal 30 days ("anonymous' latest is July. logged in's results are from 9/4"). That led to explaining the by-design 30-day freshness gate that had existed since Session 23/24 — and it turned out the user genuinely didn't know free tier's search *results* (not just its notification cadence) were held back: "i thought free tier's live site search returns latest results except their notifications are monthly." She then asked directly whether giving free tier the latest data — with only notification cadence delayed — would be a better growth strategy for this launch stage, and after a first round of discussion, landed on a specific model: **redact identifying fields for anonymous and free-tier users in both live search and email notifications, but keep the underlying data current for everyone.**
+
+This is a real business-model change, not a UX tweak — it swaps the paid differentiator from *data age* to *data identifiability*, closer to how Sales Navigator/Apollo/ZoomInfo gate their own free tiers (show that a match exists and its shape, charge to reveal exactly who it is). Implemented end to end:
+
+**The 30-day freshness gate is removed, not just relaxed, everywhere it existed:**
+- `lib/matching/engine.ts`'s `matchSearch()` — the write-time gate that decided whether a row was even allowed into `search_matches` for a free-tier user. Removed entirely, along with the now-unused `getUserTier()`/`isFreeTier` lookup in that function — it doesn't need a user's tier for anything anymore.
+- `app/(app)/searches/[id]/page.tsx`'s `fetchPage()` — the read-time gate mirrored in all six sort/order query variants. Removed from every variant.
+- `lib/email/digest.ts`'s `sendDigestForSearch()` — the same gate, duplicated across its "new matches" and "status changed" queries. Removed from both.
+
+Every saved search now matches against, and reports on, the full current dataset regardless of tier. `entity_type='business'` rows were previously exempt from this gate anyway (they're only ever monthly-cadence at every tier, a data-source characteristic, not a tier gate) — that carve-out is simply moot now that there's no gate left for it to exempt anyone from.
+
+**Masking is now applied everywhere real company data reaches a non-paid viewer — including two places that had none before:**
+
+`app/(marketing)/search/page.tsx` already had tier-based masking (`maskUniformId`/`maskCompanyName`/`maskPersonName` from `lib/masking.ts`) from the earlier same-day work, unrelated to freshness — unchanged. `runSearch()` there just dropped its `gated` parameter and the freshness clause.
+
+`app/(app)/searches/[id]/page.tsx` (the authenticated saved-search results page) **had no masking at all until now** — a real gap against the redaction promise made elsewhere in the product. A free-tier user who logged in and opened their own saved search got completely unmasked uniform IDs, names, and responsible-person names, and this was true even before today's freshness-gate removal (the freshness gate there only ever controlled *which rows* appeared, never *how* they were shown). Now free tier sees the same three fields masked as on `/search`. Two additional fields this page exposes that `/search` never did also needed handling, since either one alone would undo all three masks: the full street address (`c.address_raw` — dropped for free tier, only `address_region` remains, matching `/search`'s existing granularity) and the "Google 地圖查詢" link (built from the real name + real address — replaced with a plain "升級查看地圖" link to `/pricing` for free tier).
+
+`lib/email/digest.ts`'s `renderCompanyRow()` **also had no masking at all until now** — the same gap, but arguably more consequential: free tier's notification cadence was already fixed at monthly (from the previous session's policy change), meaning free-tier users who saved a search were *already* receiving complete, unmasked digest emails — real uniform ID, real name, real address, a working Maps link — every month, regardless of what the search page or pricing copy promised. This was never noticed because nothing about that change touched masking; it only affected which tier could pick which cadence. `renderCompanyRow()` now takes a `mask` option (and a `narrow` option, see below) applied per-row, used for both the "new matches" and "status changed" sections; masked rows drop the raw address and Maps link the same way the results page does, replacing the Maps link with a plain upgrade link. A one-line upsell (`此通知內容已部分遮蔽...升級付費方案即可收到完整未遮蔽的通知內容。`) is appended to the email footer only when the recipient's email was actually masked.
+
+**New protection: a narrow-result-set floor, because the masking above was designed for stale data and the data is no longer stale.** The per-field masking rules (keep first character, mask the rest; last 5 digits of the uniform ID) were tuned against a 30-day-stale free tier, where a masked, month-old row was low-value to bother deanonymizing. With every tier now seeing current data, a visitor who narrows region + industry + capital range + entity type down to one or two rows can often cross-reference the masked fragments — plus the *exact* capital amount and *exact* registration date, both still shown unmasked — against Taiwan's own public company registry lookup in a single query, since this data originates from that same public registry (see `lib/masking.ts`'s existing PDPA Article 19(7) note). That incentive barely existed when the row was a month old; it's real now that every row is today's or this week's.
+
+Added to `lib/masking.ts`: `isNarrowResultSet(resultCount)` (true for 1–5 results — `NARROW_RESULT_SET_THRESHOLD = 5`), `maskCapitalToBracket(capital)` (five brackets: 100萬以下 / 100–500萬 / 500–1,000萬 / 1,000–5,000萬 / 5,000萬以上), and `maskRegistrationDateToWeek(date)` (coarsens to the Monday of the week the date falls in, e.g. "2026/09/07 當週"). Applied, only for non-paid viewers, on top of the existing per-field masking — never instead of it — in all three read paths:
+- `/search`: keyed off `results.length` (the count this specific query actually returned).
+- `/searches/[id]`: keyed off `totalMatches` (the saved search's total match count across all pages, not just the current page's row count — paginating a 3-match search doesn't make it less identifiable).
+- Digest emails: keyed off `newRows.length + changedRows.length` (the true count for this send, before the existing 50-row render cap).
+
+Each surfaces a short explanatory note when it triggers ("此結果集較小，為保護當事人隱私，資本額與登記日期以區間顯示").
+
+This is a floor against the easy, one-click version of a lookup, not a defense against a determined technical adversary trying every combination — flagged as a known limit, not a guarantee.
+
+**`/searches/new`** gained a note next to the cadence picker, shown only to free-tier users, since a saved search can be created there without ever visiting `/search` and seeing that page's own masking banner: "免費方案的通知內容將以遮蔽格式顯示...升級付費方案即可收到完整未遮蔽的通知內容。"
+
+**Pricing page copy rewritten from freshness-based to redaction-based**, since freshness is no longer what any plan sells:
+- Plan A: replaced "30天以上之公司資料" with two bullets — "即時搜尋最新公司資料" and "統一編號、公司名稱與負責人姓名部分遮蔽".
+- Plan B: replaced "7天內公司資料" with "完整未遮蔽資料（統一編號、公司名稱、負責人姓名）".
+- Plan C: replaced "最新公司資料，最快前一日更新" with the same unmasked-data bullet as Plan B — Plan B and C remain meaningfully different on cadence (weekly vs. daily), saved-search limits (多組 vs. 無限), and API access, none of which this change touched.
+- Footer note rewritten from explaining the freshness carve-out for `entity_type='business'` rows (now moot — there's no freshness gate left to carve anything out of) to explaining the redaction scope: which fields are masked for free tier, which aren't, and that upgrading removes the masking.
+
+**Deliberately unchanged:** `lib/tiers.ts`'s `TIER_LIMITS`/cadence policy (monthly-only for free, from the prior entry) — this change is only about *what's in* a free-tier notification, not *how often* one arrives. `suppressed_at IS NULL` (PDPA data-removal exclusion) stays in every query exactly as before, at every tier, unaffected by any of this.
+
+**Verified:** `npx next typegen` and `npx tsc --noEmit` both clean. `npx eslint` on every touched file and a full `npx eslint .` both show the same 10 pre-existing unrelated errors this session has consistently confirmed (AccountPageClient.tsx, admin/data-removal-requests, admin/ingestion, searches/[id]/page.tsx's pre-existing `Date.now()` purity lint — confirmed present in a fresh `origin/main` clone too, unrelated to this change — lib/auth.ts, lib/ingestion/fetch.ts, lib/ingestion/upsert.ts), nothing new. A full `npm run build` runs cleanly through typecheck/module-resolution and fails only afterward on the same Google Fonts fetch this sandbox has hit on every previous build check this session — a sandbox network restriction, not a real Vercel issue (Vercel's build environment has normal internet access).
+
+**Already written to your real local repo and verified byte-for-byte:** `lib/masking.ts`, `lib/matching/engine.ts`, `app/(marketing)/search/page.tsx`, `app/(app)/searches/[id]/page.tsx`, `lib/email/digest.ts`, `app/(marketing)/pricing/page.tsx`, `app/(app)/searches/new/page.tsx`.
+
+```
+git add lib/masking.ts lib/matching/engine.ts "app/(marketing)/search/page.tsx" "app/(app)/searches/[id]/page.tsx" lib/email/digest.ts "app/(marketing)/pricing/page.tsx" "app/(app)/searches/new/page.tsx" architecture.md
+git commit -m "Remove 30-day freshness gate; redaction is now the only free-tier/anonymous gate"
+git push
+```

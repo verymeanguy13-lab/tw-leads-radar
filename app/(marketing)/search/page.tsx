@@ -6,7 +6,14 @@ import { db } from "@/lib/db";
 import { getUserTier } from "@/lib/tiers";
 import { checkSearchRateLimit } from "@/lib/rate-limit";
 import { formatCapital, formatDate } from "@/lib/utils";
-import { maskUniformId, maskCompanyName, maskPersonName } from "@/lib/masking";
+import {
+  maskUniformId,
+  maskCompanyName,
+  maskPersonName,
+  isNarrowResultSet,
+  maskCapitalToBracket,
+  maskRegistrationDateToWeek,
+} from "@/lib/masking";
 import SaveSearchButton from "@/components/SaveSearchButton";
 import type { Company } from "@/types/db";
 
@@ -97,6 +104,16 @@ interface Filters {
 //      the full /searches/new form here. Anonymous visitors see a plain
 //      login/signup prompt instead, since there's no account to attach
 //      a saved search to.
+//   5. 2026-09-05, business-model change: removed the 30-day freshness
+//      gate entirely. Free tier and anonymous visitors used to see only
+//      entity_type='company' rows 30+ days old; results are now fully
+//      CURRENT for every visitor, and masking (below) is the only thing
+//      that differs by tier. When a visitor's filters are narrow enough
+//      to return only a handful of rows, per-field masking alone is
+//      thinner protection now that the data is live rather than stale -
+//      see lib/masking.ts's isNarrowResultSet()/maskCapitalToBracket()/
+//      maskRegistrationDateToWeek() for the additional coarsening this
+//      applies on top of the name/ID/person masking in that case.
 //
 // Unchanged since earlier versions:
 //   - No saved_searches / search_matches read here - this function is a
@@ -107,15 +124,12 @@ interface Filters {
 //     runs at all - an empty form renders only the form, never a
 //     "browse everything" listing.
 //   - Hard-capped at 20 rows, no pagination.
-//   - Freshness gate mirrors the tier exactly: entity_type='company'
-//     rows need registration_date 30+ days old UNLESS the visitor is on
-//     a paid tier; entity_type='business' is exempt at every tier.
 //   - suppressed_at IS NULL always, regardless of tier.
 //   - Masking is applied only when NOT on a paid tier, inside this same
 //     Server Component, before the row is ever put into the returned
 //     markup. There's no separate API route that could be called to
 //     fetch the unmasked row directly.
-async function runSearch(filters: Filters, gated: boolean) {
+async function runSearch(filters: Filters) {
   const sql = db();
   const keywordPattern = filters.keyword.length >= 2 ? `%${filters.keyword}%` : null;
 
@@ -129,11 +143,6 @@ async function runSearch(filters: Filters, gated: boolean) {
       AND (${filters.capitalMax === null} OR capital <= ${filters.capitalMax})
       AND (${keywordPattern === null} OR name ILIKE ${keywordPattern})
       AND (${filters.industryCodes.length === 0} OR industry_codes && ${filters.industryCodes}::text[])
-      AND (
-        entity_type = 'business'
-        OR ${!gated}
-        OR COALESCE(registration_date, created_at::date) <= (now() - interval '30 days')::date
-      )
       AND suppressed_at IS NULL
     ORDER BY registration_date DESC NULLS LAST
     LIMIT 20
@@ -234,18 +243,26 @@ export default async function PublicSearchPage({
   if (hasFilters) {
     if (isLoggedIn) {
       // Accountable via their own account already - no IP check needed.
-      results = await runSearch(filters, !isPaid);
+      results = await runSearch(filters);
     } else {
       const ip = await resolveClientIp();
       const rateLimit = await checkSearchRateLimit(ip);
       if (rateLimit.allowed) {
-        results = await runSearch(filters, true);
+        results = await runSearch(filters);
       } else {
         rateLimited = true;
         retryAfterMinutes = Math.ceil((rateLimit.retryAfterSeconds ?? 60) / 60);
       }
     }
   }
+
+  // See lib/masking.ts's isNarrowResultSet() comment: once a non-paid
+  // viewer's filters narrow the result set down this far, exact capital
+  // and registration date become identifying enough (combined with the
+  // masked name/ID fragments) to risk a one-query lookup against
+  // Taiwan's own public company registry. Only matters for non-paid
+  // viewers - paid results are never masked or coarsened.
+  const narrowResults = !isPaid && isNarrowResultSet(results.length);
 
   // Auto-generated name for a search saved from this page - there's no
   // "name this search" field here (adding one would mean asking for it
@@ -433,6 +450,15 @@ export default async function PublicSearchPage({
 
       {hasFilters && !rateLimited && results.length > 0 && (
         <>
+          {narrowResults && (
+            <p className="text-xs text-secondary mb-2">
+              {"此篩選條件結果較少，為保護當事人隱私，資本額與登記日期以區間顯示。升級"}
+              <Link href="/pricing" className="underline">
+                {"付費方案"}
+              </Link>
+              {"可看到精確數值。"}
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
@@ -457,8 +483,14 @@ export default async function PublicSearchPage({
                     <td className="py-2 pr-4">
                       {(isPaid ? c.responsible_person : maskPersonName(c.responsible_person)) ?? "-"}
                     </td>
-                    <td className="py-2 pr-4">{formatCapital(c.capital)}</td>
-                    <td className="py-2 pr-4">{formatDate(c.registration_date)}</td>
+                    <td className="py-2 pr-4">
+                      {narrowResults ? maskCapitalToBracket(c.capital) : formatCapital(c.capital)}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {narrowResults
+                        ? maskRegistrationDateToWeek(c.registration_date)
+                        : formatDate(c.registration_date)}
+                    </td>
                     <td className={`py-2 pr-4 ${STATUS_CLASS[c.status] ?? ""}`}>
                       {STATUS_LABEL[c.status] ?? c.status}
                     </td>

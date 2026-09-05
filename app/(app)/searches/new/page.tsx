@@ -253,6 +253,23 @@ export default function NewSearchPage() {
 
       <div>
         <label className="block mb-1 font-medium">通知頻率</label>
+        {/* 2026-09-05: free tier's search results and email digests are
+            now fully current (the old 30-day freshness gate is gone -
+            see lib/matching/engine.ts and architecture.md), so the only
+            thing free tier still doesn't get is unmasked identifying
+            fields. Told here, not just on /search, since a user could
+            otherwise create a saved search from this form without ever
+            seeing that banner and be surprised the first digest email
+            arrives masked. */}
+        {tier === "free" && (
+          <p className="text-sm text-secondary mb-2">
+            {"免費方案的通知內容將以遮蔽格式顯示（統一編號、公司名稱與負責人姓名部分遮蔽）。升級"}
+            <Link href="/pricing" className="underline">
+              {"付費方案"}
+            </Link>
+            {"即可收到完整未遮蔽的通知內容。"}
+          </p>
+        )}
         <div className="flex flex-col gap-2">
           {CADENCE_OPTIONS.map((opt) => {
             // tier === null means the /api/user/tier fetch above hasn't

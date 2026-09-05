@@ -1,5 +1,4 @@
 import { db } from "../db";
-import { getUserTier } from "../tiers";
 
 /**
  * Runs one saved_search's filters against companies and upserts any
@@ -18,28 +17,21 @@ import { getUserTier } from "../tiers";
  * return fewer matches than expected for companies not yet enriched -
  * that's a temporary backfill-completeness gap, not a filter bug.
  *
- * Freshness-tier gating (added post-Session 23 QA pass, corrected after
- * an immediate live-test failure - see below): the pricing page promises
- * free-tier users only "30天以上之公司資料" (company data 30+ days old),
- * with an explicit carve-out that this does NOT apply to
- * entity_type='business' (獨資/合夥) rows, since those are still only
- * refreshed monthly for every tier regardless - gating them further
- * would just be confusing, not meaningful. This was never enforced
- * anywhere before now: every tier saw identical results.
- *
- * Gates on companies.registration_date (the government's registration
- * date for the company - a real historical fact), NOT
- * companies.created_at (when OUR system happened to insert the row).
- * The first version of this fix used created_at and immediately zeroed
- * out a real free-tier test search: Session 20b's historical backfill
- * bulk-inserted ~43,599 companies within a single recent window, so
- * nearly every row shares almost the same created_at regardless of how
- * old the actual company is - created_at measures "when we imported
- * this," not "how new this lead is." registration_date is what the
- * pricing promise is actually about: a company's own registration age.
- * Falls back to created_at (cast to date) only when registration_date
- * is NULL (schema allows it - some rows lack a confirmed date), so such
- * rows aren't permanently hidden from free tier over missing data.
+ * No freshness/tier gating here (removed 2026-09-05): a 30-day
+ * freshness gate used to sit right here, hiding recent
+ * entity_type='company' rows from free-tier matching entirely. The
+ * business model changed - free tier and anonymous visitors now see
+ * fully CURRENT data everywhere (this matcher, the live /search page,
+ * and email digests); the only thing that differs by tier now is
+ * whether identifying fields (uniform ID, company name, responsible
+ * person) are masked, which is a read-time presentation concern, not a
+ * write-time "should this even be matched" concern. See
+ * architecture.md's 2026-09-05 "redaction is now the only free-tier
+ * gate" entry for the full reasoning, and lib/masking.ts for where
+ * masking is actually applied (app/(marketing)/search/page.tsx,
+ * app/(app)/searches/[id]/page.tsx, lib/email/digest.ts). This function
+ * itself no longer needs a user's tier for anything, so getUserTier()
+ * was removed from here entirely.
  *
  * Returns the number of newly-created matches (not total matches).
  *
@@ -47,9 +39,9 @@ import { getUserTier } from "../tiers";
  * approved PDPA data-removal request - see db/schema.sql's comment on
  * data_removal_requests for the full rationale. Checked here (write
  * time) AND at every read point (results page, digest email), same
- * defense-in-depth reasoning as the freshness gate above - a company
- * suppressed after it was already matched into search_matches must
- * stop appearing everywhere, not just stop being newly matched.
+ * defense-in-depth reasoning the freshness gate used to follow - a
+ * company suppressed after it was already matched into search_matches
+ * must stop appearing everywhere, not just stop being newly matched.
  */
 export async function matchSearch(searchId: string): Promise<number> {
   const sql = db();
@@ -64,7 +56,6 @@ export async function matchSearch(searchId: string): Promise<number> {
     throw new Error(`Saved search ${searchId} not found`);
   }
 
-  const userId = search.user_id as string;
   const industryCodes = (search.industry_codes ?? []) as string[];
   const regions = (search.regions ?? []) as string[];
   const entityType = search.entity_type as string;
@@ -72,9 +63,6 @@ export async function matchSearch(searchId: string): Promise<number> {
   const capitalMin = search.capital_min as number | null;
   const capitalMax = search.capital_max as number | null;
   const keywordPattern = keyword ? `%${keyword}%` : null;
-
-  const tier = await getUserTier(userId);
-  const isFreeTier = tier === "free";
 
   const matches = await sql`
     SELECT uniform_id
@@ -85,11 +73,6 @@ export async function matchSearch(searchId: string): Promise<number> {
       AND (${capitalMax === null} OR capital <= ${capitalMax})
       AND (${keywordPattern === null} OR name ILIKE ${keywordPattern})
       AND (${industryCodes.length === 0} OR industry_codes && ${industryCodes}::text[])
-      AND (
-        entity_type = 'business'
-        OR ${!isFreeTier}
-        OR COALESCE(registration_date, created_at::date) <= (now() - interval '30 days')::date
-      )
       AND suppressed_at IS NULL
   `;
 

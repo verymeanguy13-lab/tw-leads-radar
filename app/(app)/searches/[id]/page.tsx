@@ -11,6 +11,14 @@ import ExportCsvButton from "@/components/ExportCsvButton";
 import DeleteSearchButton from "@/components/DeleteSearchButton";
 import PauseSearchButton from "@/components/PauseSearchButton";
 import { getUserTier } from "@/lib/tiers";
+import {
+  maskUniformId,
+  maskCompanyName,
+  maskPersonName,
+  isNarrowResultSet,
+  maskCapitalToBracket,
+  maskRegistrationDateToWeek,
+} from "@/lib/masking";
 import type { Company } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -54,27 +62,25 @@ function parsePage(value: string | undefined): number {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
-// Freshness-tier gating (same rule and rationale as
-// lib/matching/engine.ts's matchSearch(): free tier only sees
-// entity_type='company' rows once companies.created_at is 30+ days old;
-// entity_type='business' rows are exempt since they're monthly-cadence
-// for every tier already. matchSearch() only ever INSERTS into
-// search_matches (ON CONFLICT DO NOTHING) and never deletes, so a row
-// that matched before this gate existed - or before a user's tier
-// changed - can still be sitting in search_matches. This read-time
-// condition is the actual enforcement boundary for what a user sees;
-// the write-time gate in matchSearch() just keeps that table from
-// growing rows a free user should never see in the first place.
+// No freshness/tier gating here (removed 2026-09-05): every tier used
+// to see identical rows here in the first place aside from
+// matchSearch()'s own write-time gate - this read path never had its
+// own freshness check, it inherited the effect entirely from which
+// rows matchSearch() had been willing to insert into search_matches.
+// Now that matchSearch() no longer gates on freshness at all (see that
+// function's comment in lib/matching/engine.ts), there is nothing left
+// to filter out here either - every saved search's full, current match
+// set is available to every tier. What DOES still differ by tier on
+// this page is masking (isFreeTier, below) - a presentation-time
+// concern applied in the render, not in this query.
 async function fetchPage(
   sql: ReturnType<typeof db>,
   searchId: string,
-  isFreeTier: boolean,
   sort: SortKey,
   order: SortOrder,
   limit: number,
   offset: number
 ) {
-  const gated = isFreeTier;
   const key = `${sort}_${order}`;
   switch (key) {
     case "registration_date_asc":
@@ -83,7 +89,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.registration_date ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -94,7 +99,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.capital DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -105,7 +109,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.capital ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -116,7 +119,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.address_region DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -127,7 +129,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.address_region ASC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -139,7 +140,6 @@ async function fetchPage(
         FROM search_matches sm
         JOIN companies c ON c.uniform_id = sm.company_uniform_id
         WHERE sm.saved_search_id = ${searchId}
-          AND (c.entity_type = 'business' OR ${!gated} OR COALESCE(c.registration_date, c.created_at::date) <= (now() - interval '30 days')::date)
           AND c.suppressed_at IS NULL
         ORDER BY c.registration_date DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
@@ -228,7 +228,6 @@ export default async function SearchResultsPage({
   const rows = (await fetchPage(
     sql,
     id,
-    isFreeTier,
     sort,
     order,
     PAGE_SIZE,
@@ -237,6 +236,28 @@ export default async function SearchResultsPage({
 
   const totalMatches = rows[0] ? Number(rows[0].total_count) : 0;
   const totalPages = Math.max(1, Math.ceil(totalMatches / PAGE_SIZE));
+
+  // Masking (2026-09-05, business-model change): this page previously
+  // applied NO masking at all - a real gap against the redaction
+  // promise made on /search and in pricing copy, since a free-tier user
+  // who logged in and opened their own saved search's results page got
+  // completely unmasked data (exact uniform ID, full name, full
+  // responsible-person name) with no gate whatsoever. Free tier now
+  // gets the same masking here as on the public /search page.
+  //
+  // Two fields this page shows that /search never did also need
+  // handling for a masked view: the full street address (c.address_raw)
+  // and the "Google 地圖查詢" link, which is built from the REAL name and
+  // REAL address regardless of masking - clicking it would trivially
+  // undo all three masked fields at once. Both are hidden for free
+  // tier; only address_region (already shown unmasked on /search too)
+  // remains visible.
+  //
+  // narrowResults uses totalMatches (the saved search's total match
+  // count), not just this page's row count - a search with 3 total
+  // matches spread never gets less identifiable by paginating through
+  // them one at a time. See lib/masking.ts's isNarrowResultSet().
+  const narrowResults = isFreeTier && isNarrowResultSet(totalMatches);
 
   // General "data last updated" line - most recent successful run, any dataset.
   const lastGoodRuns = await sql`
@@ -312,6 +333,22 @@ export default async function SearchResultsPage({
         </p>
       )}
 
+      {isFreeTier && totalMatches > 0 && (
+        <p className="text-xs text-secondary mb-6">
+          {"免費方案顯示部分遮蔽資料（統一編號、公司名稱與負責人姓名），完整地址與地圖亦不顯示。升級"}
+          <Link href="/pricing" className="underline">
+            {"付費方案"}
+          </Link>
+          {"即可看到完整未遮蔽資料。"}
+        </p>
+      )}
+
+      {narrowResults && (
+        <p className="text-xs text-secondary mb-6">
+          {"此搜尋條件符合結果較少，為保護當事人隱私，資本額與登記日期以區間顯示。"}
+        </p>
+      )}
+
       {/* 2026-09-03: reworded from a generic "no results, try adjusting
           your criteria" message. Creating a saved search (POST
           /api/searches) never itself runs matchSearch() - a brand new
@@ -356,17 +393,32 @@ export default async function SearchResultsPage({
                   const freshAt = c.source_dataset
                     ? datasetFreshness.get(c.source_dataset)
                     : undefined;
+                  const displayName = isFreeTier ? maskCompanyName(c.name) : c.name;
+                  const displayUniformId = isFreeTier
+                    ? maskUniformId(c.uniform_id)
+                    : c.uniform_id;
+                  const displayPerson = isFreeTier
+                    ? maskPersonName(c.responsible_person)
+                    : c.responsible_person;
+                  const displayCapital = narrowResults
+                    ? maskCapitalToBracket(c.capital)
+                    : formatCapital(c.capital);
+                  const displayDate = narrowResults
+                    ? maskRegistrationDateToWeek(c.registration_date)
+                    : formatDate(c.registration_date);
                   return (
                     <tr key={c.uniform_id} className="border-b border-default align-top">
-                      <td className="py-2 pr-4">{c.name}</td>
-                      <td className="pr-4 font-numeric">{c.uniform_id}</td>
-                      <td className="pr-4 font-numeric">{formatDate(c.registration_date)}</td>
+                      <td className="py-2 pr-4">{displayName}</td>
+                      <td className="pr-4 font-numeric">{displayUniformId}</td>
+                      <td className="pr-4 font-numeric">{displayDate}</td>
                       <td className="pr-4">
                         {c.address_region ?? "\u2014"}
-                        <div className="text-secondary text-xs">{c.address_raw ?? ""}</div>
+                        {!isFreeTier && (
+                          <div className="text-secondary text-xs">{c.address_raw ?? ""}</div>
+                        )}
                       </td>
-                      <td className="pr-4">{c.responsible_person ?? "\u2014"}</td>
-                      <td className="pr-4 font-numeric">{formatCapital(c.capital)}</td>
+                      <td className="pr-4">{displayPerson ?? "\u2014"}</td>
+                      <td className="pr-4 font-numeric">{displayCapital}</td>
                       <td className="pr-4">
                         <span className={STATUS_CLASS[c.status] ?? ""}>
                           {STATUS_LABEL[c.status] ?? c.status}
@@ -383,15 +435,25 @@ export default async function SearchResultsPage({
                         )}
                       </td>
                       <td>
-                        <a
-                          href={mapsUrl(c.name, c.address_raw)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs hover:underline"
-                          style={{ color: "var(--accent)" }}
-                        >
-                          Google 地圖查詢
-                        </a>
+                        {isFreeTier ? (
+                          <Link
+                            href="/pricing"
+                            className="text-xs hover:underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            升級查看地圖
+                          </Link>
+                        ) : (
+                          <a
+                            href={mapsUrl(c.name, c.address_raw)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs hover:underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            Google 地圖查詢
+                          </a>
+                        )}
                       </td>
                     </tr>
                   );
@@ -406,13 +468,26 @@ export default async function SearchResultsPage({
               const freshAt = c.source_dataset
                 ? datasetFreshness.get(c.source_dataset)
                 : undefined;
+              const displayName = isFreeTier ? maskCompanyName(c.name) : c.name;
+              const displayUniformId = isFreeTier
+                ? maskUniformId(c.uniform_id)
+                : c.uniform_id;
+              const displayPerson = isFreeTier
+                ? maskPersonName(c.responsible_person)
+                : c.responsible_person;
+              const displayCapital = narrowResults
+                ? maskCapitalToBracket(c.capital)
+                : formatCapital(c.capital);
+              const displayDate = narrowResults
+                ? maskRegistrationDateToWeek(c.registration_date)
+                : formatDate(c.registration_date);
               return (
                 <div
                   key={c.uniform_id}
                   className="bg-card border border-default rounded-lg p-4"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="font-medium">{c.name}</span>
+                    <span className="font-medium">{displayName}</span>
                     <span className={`text-xs whitespace-nowrap ${STATUS_CLASS[c.status] ?? ""}`}>
                       {STATUS_LABEL[c.status] ?? c.status}
                     </span>
@@ -423,26 +498,36 @@ export default async function SearchResultsPage({
                     </div>
                   )}
                   <div className="text-xs text-secondary space-y-1">
-                    <div>統一編號：{c.uniform_id}</div>
-                    <div>登記日期：{formatDate(c.registration_date)}</div>
+                    <div>統一編號：{displayUniformId}</div>
+                    <div>登記日期：{displayDate}</div>
                     <div>
-                      地址：{c.address_region ?? "\u2014"} {c.address_raw ?? ""}
+                      地址：{c.address_region ?? "\u2014"}{!isFreeTier && ` ${c.address_raw ?? ""}`}
                     </div>
-                    <div>負責人：{c.responsible_person ?? "\u2014"}</div>
-                    <div>資本額：{formatCapital(c.capital)}</div>
+                    <div>負責人：{displayPerson ?? "\u2014"}</div>
+                    <div>資本額：{displayCapital}</div>
                     {(c.status === "dissolved" || c.status === "suspended") && freshAt && (
                       <div>資料來源更新於：{formatDate(freshAt)}</div>
                     )}
                   </div>
-                  <a
-                    href={mapsUrl(c.name, c.address_raw)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs hover:underline mt-2 inline-block"
-                    style={{ color: "var(--accent)" }}
-                  >
-                    Google 地圖查詢
-                  </a>
+                  {isFreeTier ? (
+                    <Link
+                      href="/pricing"
+                      className="text-xs hover:underline mt-2 inline-block"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      升級查看完整地址與地圖
+                    </Link>
+                  ) : (
+                    <a
+                      href={mapsUrl(c.name, c.address_raw)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs hover:underline mt-2 inline-block"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      Google 地圖查詢
+                    </a>
+                  )}
                 </div>
               );
             })}
