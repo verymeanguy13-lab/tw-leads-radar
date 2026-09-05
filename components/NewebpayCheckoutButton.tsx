@@ -96,7 +96,20 @@ export default function NewebpayCheckoutButton({
         // lib/newebpay-api.ts's own comment documents for the request
         // body (PostData_).
         if (!res.ok || !data?.url || !data?.postData || !data?.merchantId) {
+          // 2026-09-05 fix: found live on taiwanleads.com — this branch
+          // used to `return` without resetting `loading`/`processingRef`,
+          // which is correct for the *success* path just below (comment
+          // preserved there) but was wrong here, since nothing navigates
+          // away after a graceful error. The button was getting stuck on
+          // "處理中…" forever after ANY non-2xx response (confirmed live:
+          // the "已有進行中的訂閱" case, but the same "NewebPay 尚未設定
+          // 完成" 503 every fresh signup currently hits would have done
+          // the same) — the only recovery was a full page reload. Reset
+          // here so the person can actually retry (try yearly instead,
+          // fix whatever the error says, etc.) without one.
           setError(data?.error ?? "無法建立訂單，請稍後再試");
+          processingRef.current = false;
+          setLoading(false);
           return;
         }
         buildFormAndSubmit(data.url, {
@@ -110,7 +123,11 @@ export default function NewebpayCheckoutButton({
         // what app/api/webhooks/newebpay-mpg/route.ts expects back on
         // the notify side.
         if (!res.ok || !data?.url || !data?.tradeInfo || !data?.tradeSha || !data?.merchantId) {
+          // Same 2026-09-05 fix as the monthly branch above - see that
+          // comment.
           setError(data?.error ?? "無法建立訂單，請稍後再試");
+          processingRef.current = false;
+          setLoading(false);
           return;
         }
         buildFormAndSubmit(data.url, {
@@ -120,10 +137,12 @@ export default function NewebpayCheckoutButton({
           Version: data.version,
         });
       }
-      // Deliberately no `finally`-driven reset of loading/processingRef
-      // here on the success path: the tab is about to navigate away to
-      // NewebPay entirely, so there's no later moment where re-enabling
-      // this button would be correct.
+      // No `finally`-driven reset of loading/processingRef here on the
+      // success path (buildFormAndSubmit was called): the tab is about
+      // to navigate away to NewebPay entirely, so there's no later
+      // moment where re-enabling this button would be correct. Every
+      // failure path above now resets explicitly instead - see their
+      // own comments.
     } catch (err) {
       console.error("NewebPay checkout failed:", err);
       setError("無法建立訂單，請稍後再試");

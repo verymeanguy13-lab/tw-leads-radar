@@ -151,6 +151,16 @@ interface Filters {
 //      the user considers this page's main attraction, so the headline
 //      names that mechanism rather than making a generic speed claim.
 //
+//   8. 2026-09-05, same day: added "（不需信用卡）" next to the anonymous
+//      save-search prompt's "免費註冊" link, per the user's request for a
+//      no-card assurance "where appropriate" (mirrors the same addition
+//      on the homepage's hero sub-line and the pricing page's new trust
+//      row - see those files' own comments). Placed here specifically
+//      because this is the exact moment an anonymous visitor is being
+//      asked to create an account, so it's the most relevant spot on
+//      this page for that reassurance - not added to the rate-limit
+//      message above, which is a different, less receptive moment.
+//
 // Unchanged since earlier versions:
 //   - No saved_searches / search_matches read here - this function is a
 //     direct, capped SELECT against companies. Saving (above) goes
@@ -649,7 +659,7 @@ export default async function PublicSearchPage({
                 <Link href="/signup" className="underline">
                   {"免費註冊"}
                 </Link>
-                {"後即可儲存此搜尋條件，每月為您寄送摘要。"}
+                {"（不需信用卡）後即可儲存此搜尋條件，每月為您寄送摘要。"}
               </p>
             )}
           </div>

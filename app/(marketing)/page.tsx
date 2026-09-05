@@ -41,7 +41,7 @@ export default function LandingPage() {
           <Link href="/signup" className="underline">
             {"\u514d\u8cbb\u8a3b\u518a"}
           </Link>
-          {"\u4ea6\u53ef\u5132\u5b58\u641c\u5c0b\u689d\u4ef6\uff0c\u6bcf\u6708\u81ea\u52d5\u901a\u77e5\u3002"}
+          {"\uff08\u4e0d\u9700\u4fe1\u7528\u5361\uff09\u4ea6\u53ef\u5132\u5b58\u641c\u5c0b\u689d\u4ef6\uff0c\u6bcf\u6708\u81ea\u52d5\u901a\u77e5\u3002"}
         </p>
       </section>
 
