@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     -- to know a NewebPay subscription already had cancellation
     -- requested, distinct from one that's simply still running.
     canceled_at TIMESTAMPTZ,
+    -- Added 2026-09-06: copied from newebpay_pending_orders.
+    -- business_use_confirmed_at by the webhook (app/api/webhooks/
+    -- newebpay(-mpg)/route.ts) at the moment it creates this row, so the
+    -- record of the business-use confirmation (see Terms of Service 第一
+    -- 條/第六條 - this is what those clauses were describing, added
+    -- 2026-09-06 site completeness audit) outlives the pending order's
+    -- short lifetime. Only set on the initial INSERT, never touched by a
+    -- later recurring-charge UPDATE - a renewal isn't a fresh
+    -- confirmation. NULL for any subscription created before this column
+    -- existed, and for every Paddle-based row (Paddle checkout is
+    -- unreachable from the UI as of the 2026-09-05 "hide Paddle" change,
+    -- so this gap is not expected to grow).
+    business_use_confirmed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -71,7 +84,14 @@ CREATE TABLE IF NOT EXISTS newebpay_pending_orders (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     tier VARCHAR(20) NOT NULL CHECK (tier IN ('pro', 'business')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    claimed_at TIMESTAMPTZ
+    claimed_at TIMESTAMPTZ,
+    -- Added 2026-09-06: records when the required business-use checkbox
+    -- (app/api/checkout/newebpay(-yearly)/route.ts reject the request
+    -- with no row inserted here at all if it wasn't checked) was
+    -- confirmed at checkout-initiation time. See the matching column on
+    -- `subscriptions` for why this is copied forward instead of only
+    -- living here - migrate-add-business-use-confirmation.ts adds both.
+    business_use_confirmed_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_newebpay_pending_orders_user_id ON newebpay_pending_orders(user_id);

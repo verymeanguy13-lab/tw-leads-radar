@@ -2575,3 +2575,32 @@ Then, once, against the real production database (same one-time-migration patter
 ```
 npx tsx scripts/migrate-add-removal-responsible-person.ts
 ```
+
+## Added the "business use" checkbox at checkout, which Terms of Service already claimed existed — 2026-09-06
+
+Found by this session's site completeness audit, not by direct user request: `app/(marketing)/terms/page.tsx` 第一條 states "訂閱時將請求使用者確認其係基於商業、營業或專業目的使用本服務" and 第六條 goes further, saying the subscriber "確認以此目的使用本服務，並確認同意服務於付款後立即開始提供，了解在此情形下依法不適用消費者保護法通訊交易之猶豫期解除權" — i.e. the Terms describe a checkbox, checked at subscription time, that this site's position on the Consumer Protection Act's 7-day cooling-off right actually depends on. Checked signup, pricing, and both NewebPay checkout buttons directly: no such checkbox, or anything like it, existed anywhere in the product. The Terms were describing a control that had never been built.
+
+Two options existed — build the checkbox, or edit the Terms to match what the product actually does — and this was deliberately left as a decision for the user rather than picked by default, since either is defensible but they trade off differently (a checkbox adds real friction to an already-fragile checkout funnel; editing the Terms means giving up the cooling-off-right waiver this site currently claims). User chose to build it.
+
+**What was built:** a required checkbox in `components/NewebpayCheckoutButton.tsx` — the one component both `/pricing` and the account page's upgrade buttons already share — with wording drawn directly from Terms 第六條 so the two can't drift out of sync: "我確認本次訂閱係基於商業、營業或專業目的而非個人消費使用，並同意服務於付款完成後立即開始提供，了解此情形依法不適用通訊交易之七日猶豫期解除權。" Both checkout-initiation routes (`app/api/checkout/newebpay/route.ts`, `.../newebpay-yearly/route.ts`) now reject the request with a 400 if `businessUseConfirmed` isn't `true` in the POST body — the client-side disabled-button is not trusted on its own for something this legally load-bearing, since a direct API call would skip it entirely.
+
+The checkbox only gates the buttons once `userId` is known (i.e. once signed in) — a logged-out visitor clicking a paid plan on `/pricing` is just being routed to `/signup?callbackUrl=/pricing`, not subscribing yet, so requiring the confirmation before that redirect would be premature friction on a step that isn't actually the subscription moment. They see the checkbox for real once they're back on `/pricing`, signed in, about to actually check out.
+
+**Evidence, not just a gate:** `newebpay_pending_orders.business_use_confirmed_at` is set to `now()` at checkout-initiation time (both routes), then copied onto the real `subscriptions` row by whichever webhook creates it (`app/api/webhooks/newebpay/route.ts` for monthly, `.../newebpay-mpg/route.ts` for yearly) — so the record of when this specific subscriber confirmed business use outlives the pending order's short lifetime and survives on the subscription itself. Only set on the initial `INSERT`, never touched by a later recurring-charge `UPDATE` — a renewal isn't a fresh confirmation.
+
+Not touched: `components/CheckoutButton.tsx` (Paddle) — unreachable from any live UI surface since the 2026-09-05 "hide Paddle" change, so it was left as-is rather than adding a checkbox to a path nothing can currently click.
+
+**New files:** `scripts/migrate-add-business-use-confirmation.ts`.
+**Modified:** `components/NewebpayCheckoutButton.tsx`, `app/api/checkout/newebpay/route.ts`, `app/api/checkout/newebpay-yearly/route.ts`, `app/api/webhooks/newebpay/route.ts`, `app/api/webhooks/newebpay-mpg/route.ts`, `db/schema.sql`.
+
+```
+git add scripts/migrate-add-business-use-confirmation.ts components/NewebpayCheckoutButton.tsx app/api/checkout/newebpay/route.ts app/api/checkout/newebpay-yearly/route.ts app/api/webhooks/newebpay/route.ts app/api/webhooks/newebpay-mpg/route.ts db/schema.sql architecture.md
+git commit -m "Add required business-use checkbox to checkout, matching what Terms of Service already claimed existed"
+git push
+```
+
+Then, once, against the real production database (same one-time-migration pattern as every other `scripts/migrate-*.ts`):
+
+```
+npx tsx scripts/migrate-add-business-use-confirmation.ts
+```

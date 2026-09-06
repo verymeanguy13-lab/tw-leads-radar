@@ -13,6 +13,20 @@ import { useRouter } from "next/navigation";
 // there; the eventual redirect back and the async payment notification
 // are handled by ReturnURL/NotifyURL, not by this component.
 //
+// 2026-09-06: added the required "business use" checkbox below, and a
+// businessUseConfirmed flag on both checkout POST bodies. This is the
+// checkbox app/(marketing)/terms/page.tsx (第一條, 第六條) already
+// described as existing at subscription time - the 2026-09-06 site
+// completeness audit found the Terms made this claim while no such
+// checkbox actually existed anywhere in the product. Wording is drawn
+// directly from Terms 第六條's own language so the two can't drift out
+// of sync. Both checkout API routes now reject the request outright
+// (400, before any row is written) if this isn't true - never trust a
+// client-side-only checkbox for something this legally load-bearing.
+// See db/schema.sql's business_use_confirmed_at columns (migration:
+// scripts/migrate-add-business-use-confirmation.ts) for how the
+// confirmation is recorded as evidence, not just gated on.
+//
 // 2026-09-05: wired into app/(marketing)/pricing/page.tsx and
 // app/(app)/account/AccountPageClient.tsx, replacing Paddle's
 // CheckoutButton there (see architecture.md's 2026-09-05 "hide Paddle
@@ -64,6 +78,7 @@ export default function NewebpayCheckoutButton({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [businessUseConfirmed, setBusinessUseConfirmed] = useState(false);
   // Ref, not state, for the same reason CheckoutButton.tsx uses one: a
   // ref is checked synchronously, so a burst of clicks before the first
   // request resolves genuinely can't send a second one.
@@ -71,22 +86,35 @@ export default function NewebpayCheckoutButton({
 
   async function handleClick(cadence: "monthly" | "yearly") {
     if (processingRef.current) return;
+
+    if (!userId) {
+      // Not signed in yet - this click isn't "subscribing", it's "go
+      // create an account first", so the business-use checkbox (which is
+      // about confirming *this specific paid subscription*, per Terms
+      // 第六條) doesn't apply here yet. They'll see this same button
+      // again, with the checkbox, once they're back on /pricing signed
+      // in - see the JSX below, which only requires the checkbox when
+      // userId is present.
+      router.push("/signup?callbackUrl=/pricing");
+      return;
+    }
+
+    // Belt-and-suspenders: the button itself is already disabled unless
+    // this is true (see the JSX below), but check again here too in case
+    // that ever changes - the API routes enforce this for real, this is
+    // just to avoid firing a request that's guaranteed to be rejected.
+    if (!businessUseConfirmed) return;
     processingRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
-      if (!userId) {
-        router.push("/signup?callbackUrl=/pricing");
-        return;
-      }
-
       const endpoint =
         cadence === "monthly" ? "/api/checkout/newebpay" : "/api/checkout/newebpay-yearly";
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier, cadence }),
+        body: JSON.stringify({ tier, cadence, businessUseConfirmed }),
       });
       const data = await res.json().catch(() => null);
 
@@ -152,10 +180,21 @@ export default function NewebpayCheckoutButton({
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
+      <label className="flex items-start gap-2 text-xs text-secondary">
+        <input
+          type="checkbox"
+          checked={businessUseConfirmed}
+          onChange={(e) => setBusinessUseConfirmed(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          我確認本次訂閱係基於商業、營業或專業目的而非個人消費使用，並同意服務於付款完成後立即開始提供，了解此情形依法不適用通訊交易之七日猶豫期解除權。
+        </span>
+      </label>
       <button
         type="button"
-        disabled={loading}
+        disabled={loading || (!!userId && !businessUseConfirmed)}
         onClick={() => handleClick("monthly")}
         className={className}
       >
@@ -163,7 +202,7 @@ export default function NewebpayCheckoutButton({
       </button>
       <button
         type="button"
-        disabled={loading}
+        disabled={loading || (!!userId && !businessUseConfirmed)}
         onClick={() => handleClick("yearly")}
         className="block w-full text-center text-xs hover:underline disabled:opacity-50"
         style={{ color: "var(--accent)" }}

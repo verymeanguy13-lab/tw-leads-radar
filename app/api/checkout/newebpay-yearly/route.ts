@@ -57,10 +57,21 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const tier = body?.tier as "pro" | "business" | undefined;
   const cadence = body?.cadence as "yearly" | undefined;
+  const businessUseConfirmed = body?.businessUseConfirmed === true;
 
   if (!tier || cadence !== "yearly" || !TIER_PRICING[tier]?.yearly) {
     return NextResponse.json(
       { error: "tier and cadence (yearly) are required" },
+      { status: 400 }
+    );
+  }
+
+  // 2026-09-06: same server-side enforcement as the monthly route — see
+  // that route's matching comment and components/NewebpayCheckoutButton.tsx's
+  // 2026-09-06 header comment for the full reasoning.
+  if (!businessUseConfirmed) {
+    return NextResponse.json(
+      { error: "請確認本次訂閱之使用目的後再繼續" },
       { status: 400 }
     );
   }
@@ -116,8 +127,8 @@ export async function POST(req: Request) {
   try {
     await withUserContext(userId, (sqlClient) =>
       sqlClient`
-        INSERT INTO newebpay_pending_orders (merchant_order_no, user_id, tier)
-        VALUES (${merchantOrderNo}, ${userId}, ${tier})
+        INSERT INTO newebpay_pending_orders (merchant_order_no, user_id, tier, business_use_confirmed_at)
+        VALUES (${merchantOrderNo}, ${userId}, ${tier}, now())
       `
     );
   } catch (err) {

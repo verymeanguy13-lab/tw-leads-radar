@@ -76,6 +76,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const tier = body?.tier as "pro" | "business" | undefined;
   const cadence = body?.cadence as "monthly" | undefined;
+  const businessUseConfirmed = body?.businessUseConfirmed === true;
 
   if (!tier || cadence !== "monthly" || !TIER_PRICING[tier]?.monthly) {
     // "yearly" deliberately rejected here, not silently accepted — see
@@ -84,6 +85,19 @@ export async function POST(req: Request) {
     // not a valid request this route should try to honor.
     return NextResponse.json(
       { error: "tier and cadence (monthly) are required" },
+      { status: 400 }
+    );
+  }
+
+  // 2026-09-06: enforced server-side, not just by disabling the button in
+  // components/NewebpayCheckoutButton.tsx — see that file's 2026-09-06
+  // header comment. This is what Terms of Service 第一條/第六條 already
+  // claimed happens "訂閱時"; a client that skips the checkbox (or calls
+  // this route directly) must not be able to create a subscription
+  // without it.
+  if (!businessUseConfirmed) {
+    return NextResponse.json(
+      { error: "請確認本次訂閱之使用目的後再繼續" },
       { status: 400 }
     );
   }
@@ -178,8 +192,8 @@ export async function POST(req: Request) {
   try {
     await withUserContext(userId, (sqlClient) =>
       sqlClient`
-        INSERT INTO newebpay_pending_orders (merchant_order_no, user_id, tier)
-        VALUES (${merchantOrderNo}, ${userId}, ${tier})
+        INSERT INTO newebpay_pending_orders (merchant_order_no, user_id, tier, business_use_confirmed_at)
+        VALUES (${merchantOrderNo}, ${userId}, ${tier}, now())
       `
     );
   } catch (err) {

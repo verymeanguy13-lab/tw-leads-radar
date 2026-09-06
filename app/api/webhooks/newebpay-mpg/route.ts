@@ -106,10 +106,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const pendingRows = await sql`
-      SELECT user_id, tier FROM newebpay_pending_orders
+      SELECT user_id, tier, business_use_confirmed_at FROM newebpay_pending_orders
       WHERE merchant_order_no = ${merchantOrderNo} AND claimed_at IS NULL
     `;
-    const pending = pendingRows[0] as { user_id: string; tier: string } | undefined;
+    const pending = pendingRows[0] as
+      | { user_id: string; tier: string; business_use_confirmed_at: string | null }
+      | undefined;
 
     if (!pending) {
       // Either an already-claimed order (a duplicate notify - NewebPay,
@@ -128,11 +130,12 @@ export async function POST(req: NextRequest) {
 
     await sql`
       INSERT INTO subscriptions (
-        user_id, newebpay_merchant_order_no, tier, status, current_period_end
+        user_id, newebpay_merchant_order_no, tier, status, current_period_end,
+        business_use_confirmed_at
       )
       VALUES (
         ${pending.user_id}, ${merchantOrderNo}, ${pending.tier}, 'active',
-        now() + (${YEARLY_PLAN_DAYS} || ' days')::interval
+        now() + (${YEARLY_PLAN_DAYS} || ' days')::interval, ${pending.business_use_confirmed_at}
       )
       ON CONFLICT (newebpay_merchant_order_no) DO NOTHING
     `;

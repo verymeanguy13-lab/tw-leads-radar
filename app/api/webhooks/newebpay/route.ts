@@ -100,19 +100,22 @@ export async function POST(req: NextRequest) {
     // order (inserted at checkout-initiation time — not yet built) and
     // create the real subscription row.
     const pendingRows = await sql`
-      SELECT user_id, tier FROM newebpay_pending_orders
+      SELECT user_id, tier, business_use_confirmed_at FROM newebpay_pending_orders
       WHERE merchant_order_no = ${merchantOrderNo} AND claimed_at IS NULL
     `;
-    const pending = pendingRows[0] as { user_id: string; tier: string } | undefined;
+    const pending = pendingRows[0] as
+      | { user_id: string; tier: string; business_use_confirmed_at: string | null }
+      | undefined;
 
     if (pending) {
       await sql`
         INSERT INTO subscriptions (
-          user_id, newebpay_merchant_order_no, newebpay_period_no, tier, status, current_period_end
+          user_id, newebpay_merchant_order_no, newebpay_period_no, tier, status, current_period_end,
+          business_use_confirmed_at
         )
         VALUES (
           ${pending.user_id}, ${merchantOrderNo}, ${periodNo}, ${pending.tier}, 'active',
-          ${result.NextAuthDate ?? null}
+          ${result.NextAuthDate ?? null}, ${pending.business_use_confirmed_at}
         )
         ON CONFLICT (newebpay_period_no) DO UPDATE
         SET status = 'active',
