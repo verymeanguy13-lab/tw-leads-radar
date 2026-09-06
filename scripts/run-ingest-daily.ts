@@ -45,18 +45,12 @@ interface ProfileRow {
   Sus_End_Date: string;
 }
 
-function todayRocDate(): string {
+// 2026-09-06: generalized from the old separate todayRocDate() /
+// yesterdayRocDate() pair so main() can look back further than just
+// "yesterday and today" - see DISCOVERY_LOOKBACK_DAYS below for why.
+function rocDateForOffset(daysAgo: number): string {
   const now = new Date();
-  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const rocYear = taipei.getUTCFullYear() - 1911;
-  const mm = String(taipei.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(taipei.getUTCDate()).padStart(2, "0");
-  return `${rocYear}${mm}${dd}`;
-}
-
-function yesterdayRocDate(): string {
-  const now = new Date();
-  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const taipei = new Date(now.getTime() + 8 * 60 * 60 * 1000 - daysAgo * 24 * 60 * 60 * 1000);
   const rocYear = taipei.getUTCFullYear() - 1911;
   const mm = String(taipei.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(taipei.getUTCDate()).padStart(2, "0");
@@ -260,6 +254,15 @@ async function retryRecentGaps(runStats: {
 async function ingestDate(rocDate: string, runStats: {
   rowCount: number;
   newCount: number;
+  // 2026-09-06: repurposed, not renamed, to avoid an ingestion_runs
+  // schema migration for this fix. This job used to fetch+re-upsert
+  // every already-known company it saw again (hence "updated"); now it
+  // skips already-known companies outright (see the `existing` check
+  // below) rather than re-fetching them, so this now counts "already
+  // known, skipped" rather than "profile data refreshed." Same column
+  // in ingestion_runs, different meaning - a run where this number is
+  // large just means the lookback window re-discovered a lot of
+  // already-captured companies, not that anything was updated.
   updatedCount: number;
   parseFailures: number;
   industryCodeAttempts: number;
@@ -274,6 +277,29 @@ async function ingestDate(rocDate: string, runStats: {
   for (const row of discovered) {
     runStats.rowCount++;
     try {
+      // 2026-09-06: check whether we already have this company BEFORE
+      // spending two GCIS API calls (profile + industry) on it. Added
+      // alongside DISCOVERY_LOOKBACK_DAYS below specifically so that
+      // widening the lookback window doesn't multiply this job's GCIS
+      // call volume by however many days it now re-checks - a company
+      // discovered again on day+3 of the lookback almost always already
+      // exists in `companies` from day+0's run, and re-fetching its
+      // profile/industry data here would be pure waste (retryRecentGaps()
+      // above already re-attempts any company still missing those fields
+      // within the last 14 days, so this loop doesn't need to also try).
+      // This makes the lookback window's real cost proportional to how
+      // many companies GCIS was actually slow to index (the thing this
+      // change exists to catch), not to lookbackDays x daily volume.
+      const existing = await sql`
+        SELECT uniform_id FROM companies WHERE uniform_id = ${row.Business_Accounting_NO}
+      `;
+      const isNew = existing.length === 0;
+
+      if (!isNew) {
+        runStats.updatedCount++;
+        continue;
+      }
+
       const profile = await fetchProfile(row.Business_Accounting_NO);
       await sleep(PROFILE_FETCH_DELAY_MS);
 
@@ -306,6 +332,9 @@ async function ingestDate(rocDate: string, runStats: {
       // no classified business items yet. These counters let main()
       // check the aggregate rate after processing and flag a run as
       // degraded even though no individual call ever threw.
+      // (Only counted for genuinely new companies now, since 2026-09-06 -
+      // already-known companies short-circuit above and never reach here,
+      // so they no longer dilute this rate.)
       runStats.industryCodeAttempts++;
       if (liveIndustryCodesResult !== null && liveIndustryCodesResult.length > 0) {
         runStats.industryCodeSuccesses++;
@@ -316,11 +345,6 @@ async function ingestDate(rocDate: string, runStats: {
 
       const registrationDate = rocDateToIso(rocDate);
       const rawAddress = profile?.Company_Location ?? null;
-
-      const existing = await sql`
-        SELECT uniform_id FROM companies WHERE uniform_id = ${row.Business_Accounting_NO}
-      `;
-      const isNew = existing.length === 0;
 
       await sql`
         INSERT INTO companies (
@@ -368,10 +392,14 @@ async function ingestDate(rocDate: string, runStats: {
       // CASE means re-ingesting an existing company on a later day can
       // never overwrite already-populated industry_codes (from either
       // this live call on an earlier day, or the monthly CSV refresh)
-      // with an empty result from a failed live lookup.
+      // with an empty result from a failed live lookup. The ON CONFLICT
+      // branch itself should no longer normally fire at all as of
+      // 2026-09-06 (the `existing` check above already skips this whole
+      // block for a company we already have) -- kept only as a safety
+      // net for the rare race between that SELECT and this INSERT
+      // (e.g. two overlapping manual runs), not as the expected path.
 
-      if (isNew) runStats.newCount++;
-      else runStats.updatedCount++;
+      runStats.newCount++;
     } catch (err) {
       runStats.parseFailures++;
       console.error(`Failed on ${row.Business_Accounting_NO} (${row.Company_Name}):`, err);
@@ -387,10 +415,44 @@ async function ingestDate(rocDate: string, runStats: {
 // at 0% for six straight days, nowhere near this line.
 const DEGRADED_THRESHOLD = 0.5;
 
+// 2026-09-06: widened from just [yesterday, today]. Root cause found
+// while sizing a real, measured gap for 方案C (daily-cadence)
+// subscribers - scripts/check-gcis-live-recount.ts proved GCIS's own
+// live Company_Setup_Date index keeps filling in more of a day's
+// registrations for days afterward (captured-on-day averaged 99.8 vs.
+// live-count-weeks-later averaged 156.2 across six test dates - roughly
+// 36% of a day's eventual registrations aren't visible yet the next
+// morning). Since the daily digest's own cadence window is only 2
+// calendar days wide (a direct, deliberate user instruction - see
+// lib/cadence.ts - not something this change should touch), a
+// registration GCIS is slow to index can age out of that window before
+// this job ever discovers it, if this job only ever checks "yesterday"
+// and "today" once each. scripts/check-silently-dropped-matches.ts's
+// refined run measured this precisely: 57.1% of daily-cadence matches
+// that WERE captured within a reasonable time of their real
+// registration_date still got silently dropped instead of emailed.
+//
+// Fix: re-check the last DISCOVERY_LOOKBACK_DAYS days' worth of
+// Company_Setup_Date every run, not just the two most recent. Chosen
+// as a middle ground - comfortably inside the TIMELY_MATCH_DAYS (7)
+// window that diagnostic script already treated as "a genuine
+// near-real-time capture," while not trying to chase GCIS's index all
+// the way out to the multi-week tail the recount script observed
+// (that tail is still covered by the existing monthly bulk pipeline,
+// same as before this change). Re-checking the same date on multiple
+// consecutive days is only cheap because of the `existing` check added
+// to ingestDate() alongside this change - see its comment for why this
+// doesn't multiply this job's GCIS call volume by DISCOVERY_LOOKBACK_DAYS.
+const DISCOVERY_LOOKBACK_DAYS = 5;
+
 async function main() {
   const startedAt = new Date();
   const manualDate = process.env.ROC_DATE;
-  const dates = manualDate ? [manualDate] : [yesterdayRocDate(), todayRocDate()];
+  const dates = manualDate
+    ? [manualDate]
+    : Array.from({ length: DISCOVERY_LOOKBACK_DAYS + 1 }, (_, daysAgo) =>
+        rocDateForOffset(daysAgo)
+      );
 
   const runStats = {
     rowCount: 0,
@@ -511,7 +573,7 @@ async function main() {
   `;
 
   console.log(
-    `Done. ${runStats.rowCount} seen, ${runStats.newCount} new, ${runStats.updatedCount} updated, ${runStats.parseFailures} failures. ` +
+    `Done. ${runStats.rowCount} seen, ${runStats.newCount} new, ${runStats.updatedCount} already known (skipped), ${runStats.parseFailures} failures. ` +
       `Retry: ${retryStats.retrySuccesses}/${retryStats.retryAttempts} gaps improved. Status: ${status}`
   );
 
