@@ -2629,3 +2629,46 @@ Then, once, against the real production database:
 ```
 npx tsx scripts/migrate-add-password-reset.ts
 ```
+
+## Corrected: contact@taiwanleads.com was never actually receiving mail; DMARC record added — 2026-09-06, continued
+
+User reported that verification and registration emails were landing in Gmail spam. Investigation found Resend's own domain authentication (SPF via `send.taiwanleads.com`, DKIM via `resend._domainkey`) was already correctly configured and not the cause. Two real gaps were found instead: no DMARC record existed for taiwanleads.com at all, and — more significantly — **no MX record existed for the bare taiwanleads.com domain**, meaning nothing sent to contact@taiwanleads.com had ever actually been delivered anywhere.
+
+This directly contradicts the 2026-09-04 "Terms of Service & Privacy Policy published live" entry above (and the blueprint doc's matching addendum), both of which described contact@taiwanleads.com as an already-active Zoho Mail mailbox at the time the Terms/Privacy pages went live. It was not: a Zoho Mail account may have existed, but with no MX record pointing at Zoho, mail sent to that address had nowhere to go. Anyone who emailed the legal contact address published on taiwanleads.com/terms or /privacy since 2026-09-04 would have had their message silently dropped, not delivered-and-unread. This session made that mailbox genuinely functional for the first time (see the following two entries).
+
+Added a `_dmarc` TXT record: `v=DMARC1; p=none; rua=mailto:contact@taiwanleads.com` — monitor-only policy (`p=none`) rather than quarantine/reject, since the domain has no prior DMARC history to validate against first. Aggregate reports (`rua`) go to contact@taiwanleads.com, which — per the entries below — is now a real working mailbox for the first time, so those reports will actually be seen. Worth tightening to `p=quarantine` after a few weeks of clean reports.
+
+No code files changed — this and the following two entries are pure DNS/third-party-account configuration work, done directly in Vercel's DNS panel and Zoho's admin console. Nothing to commit to git for these three entries.
+
+## taiwanleads.com added to Zoho Mail as a real second domain; MX, SPF, and DKIM configured and verified — 2026-09-06, continued
+
+Added taiwanleads.com as a second domain under the same Zoho Mail organization that already hosts citationradar.pro (a separate, pre-existing project on the same Zoho account) — Zoho Mail Lite supports multiple domains per organization at no extra domain fee, only a per-mailbox-user fee (see the following entry).
+
+Domain ownership verified via a TXT record at the domain root (`zoho-verification=zb95481655.zmverify.zoho.com`, still present in DNS, harmless to leave). Zoho then required these DNS Mapping records, all added via Vercel's DNS panel and confirmed verified in Zoho's dashboard:
+- MX @ → mx.zoho.com (priority 10), mx2.zoho.com (priority 20), mx3.zoho.com (priority 50)
+- TXT @ → `v=spf1 include:zohomail.com ~all`
+- TXT `zmail._domainkey` → Zoho's DKIM public key
+
+None of this touches the pre-existing Resend authentication records (`resend._domainkey`, and the `send.taiwanleads.com` subdomain's own isolated SPF/MX for transactional mail) — Zoho handles inbound mail to the domain; Resend continues handling outbound transactional mail from the `send.` subdomain. The two coexist without conflict since they're scoped to different names.
+
+**Real mistake made and fixed during this work, worth remembering for future DNS edits:** the DKIM value was first transcribed by reading it off a screenshot image rather than plain text, and several characters were misread — a very easy mistake with long base64-looking keys in a small screenshot. Zoho's verification failed and displayed the correct value as selectable text, which the user then pasted directly; the mismatch was caught by diffing the two strings. The fix itself hit a second, unrelated issue: attempting to edit the existing Vercel TXT record in place caused Vercel's edit form to concatenate the old and new values together instead of replacing the field, corrupting the record further. The working fix was to delete the record entirely and re-add it fresh via Vercel's "Add" form, which correctly created a clean record both times it was used. **Lesson for future sessions:** never transcribe a long key/token from a screenshot — always get the exact text pasted directly — and prefer delete-and-re-add over in-place edit for long-value TXT records in Vercel's DNS UI.
+
+**Also noted:** Vercel's DNS record "Type" `<select>` dropdown does not register a direct click on the rendered option in this UI — the reliable method is to click the dropdown to focus it, press the keyboard letter matching the desired option (e.g. "t" for TXT, "m" for MX), press Return, then Escape.
+
+No code files changed.
+
+## contact@taiwanleads.com is now a real, working mailbox — second Zoho Mail Lite seat purchased, mailbox created, forwarded and aliased into Gmail — 2026-09-06, continued
+
+With MX/SPF/DKIM verified (previous entry), Zoho's Users section still showed only the pre-existing `alerts@citationradar.pro` user — creating a second mailbox required purchasing a second Mail Lite license, since Zoho enforces one license per mailbox and the org's existing subscription only covered one. Confirmed directly on Zoho's own live pricing page: Mail Lite is US$1/user/month, billed annually only (no monthly plan). Purchased the second seat via Zoho's billing console (store.zoho.com) — subscription (ID RPUS2007109390325) now shows 2 users, $24.00/year total, next renewal 28 Aug 2027, charged to the card already on file.
+
+Created `contact@taiwanleads.com` as a Zoho Mail user. This is the first point at which that address has ever actually been able to receive mail (see the correction entry above) — anything sent to it before this session's MX-record work had nowhere to go.
+
+**User's stated requirement: must be able to reply to clients as this address, not just receive.** This ruled out a free receive-only forwarding alternative (a third-party forwarding-only service instead of paying for the Zoho seat), which was considered and explicitly rejected for this reason.
+
+Set up so the user can work entirely from Gmail rather than Zoho's webmail:
+- **Forwarding** (Zoho side, Settings → Mail Accounts → contact@taiwanleads.com → Forwards): incoming mail forwards to `verymeanguy11@gmail.com`. **Note this is a different address from `verymeanguy13@gmail.com`**, the user's main address on file elsewhere — confirmed directly with the user as intentional, not a typo, but worth double-checking against confusion in any future session that touches this. Forwarding confirmation code was verified.
+- **Reply-as** (Gmail side, in the `verymeanguy11@gmail.com` account, Settings → Accounts and Import → Send mail as): added `contact@taiwanleads.com` as a send-as alias using Zoho's SMTP (`smtppro.zoho.com`, port 465, SSL), authenticated with the mailbox's own Zoho password. This lets replies sent from Gmail show as coming from `contact@taiwanleads.com` and be genuinely authenticated as taiwanleads.com mail (routed through Zoho's real SMTP, not just a Reply-To header) — sending directly from Gmail's own servers without this would not pass SPF for the domain.
+
+**Not yet independently verified, left for the next session:** whether the Gmail send-as verification email was actually confirmed, whether the Zoho forwarding toggle is switched on (verifying a forwarding address and enabling it are two separate steps), and a real end-to-end test (send from an outside address to contact@taiwanleads.com, confirm it lands in verymeanguy11@gmail.com, reply, and check the received copy's headers for SPF/DKIM/DMARC pass). Also not yet re-tested: whether the original complaint (verification/registration emails landing in Gmail spam) is actually resolved — best checked a few days out, since domain reputation with low sending volume can take time to settle even with correct DNS now in place.
+
+No code files changed.
