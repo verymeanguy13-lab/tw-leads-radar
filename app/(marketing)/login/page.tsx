@@ -114,7 +114,16 @@ function LoginForm() {
             </div>
 
             <div>
-              <label className="block mb-1 font-medium text-sm">密碼</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-medium text-sm">密碼</label>
+                <a
+                  href="/forgot-password"
+                  className="text-xs hover:underline"
+                  style={{ color: "var(--accent)" }}
+                >
+                  忘記密碼？
+                </a>
+              </div>
               <input
                 type="password"
                 value={password}

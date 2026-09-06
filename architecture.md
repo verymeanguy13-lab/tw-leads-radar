@@ -2604,3 +2604,28 @@ Then, once, against the real production database (same one-time-migration patter
 ```
 npx tsx scripts/migrate-add-business-use-confirmation.ts
 ```
+
+## Added a self-service "forgot password" flow — 2026-09-06
+
+Also flagged by this session's site completeness audit: there was no way for someone who forgets their password to recover their account. The only related-looking code, `app/api/auth/magic-link/route.ts` + `app/(marketing)/login/verify/page.tsx`, turned out to be dead code on inspection — `login/verify` calls `signIn("magic-link", ...)`, but `lib/auth.ts`'s `authOptions.providers` only registers `GoogleProvider` and `CredentialsProvider`, no `"magic-link"` provider — so that call has always silently failed. Confirmed unrelated to this feature and left untouched.
+
+**What was built**, closely mirroring the existing email-verification flow (`lib/email/verification.ts`, `app/api/auth/verify/route.ts`) rather than inventing a new pattern: a "忘記密碼？" link on `/login` → `/forgot-password` (email input) → `POST /api/auth/forgot-password` → `lib/email/password-reset.ts`'s `sendPasswordResetEmail()` generates a random token, stores only its SHA-256 hash (via the same `hashToken()` verification.ts already exports) on two new columns, and emails the raw token as a link via Resend → `/reset-password?token=...` (new password + confirm) → `POST /api/auth/reset-password` validates the hash and expiry, updates `password_hash` (bcrypt, cost 12 — matching signup), and clears the token columns so it's single-use.
+
+New columns are `users.password_reset_token_hash` / `password_reset_token_expires_at` (migration: `scripts/migrate-add-password-reset.ts`) — deliberately separate from the existing `verification_token_hash`/`_expires_at` pair, since a brand-new unverified signup could legitimately request a password reset before ever clicking their verification link, and sharing one pair of columns would let one flow invalidate the other's in-flight token. Expiry is 1 hour, shorter than verification's 24 — this token grants account access if intercepted, not just "mark this email verified".
+
+Two things deliberately handled, not overlooked: (1) a Google-only account (no `password_hash`) gets no reset email at all if someone requests one for that address, but the frontend shows the exact same "check your inbox" message either way — same account-enumeration-avoidance pattern `app/api/auth/resend-verification/route.ts` already established, applied here for the same reason. (2) resetting a password does **not** invalidate that user's other already-active sessions — sessions are stateless NextAuth JWTs, not server-revocable — so a compromised account's existing logged-in session(s) elsewhere would keep working until they naturally expire. Real, known gap; not solved this round.
+
+**New files:** `app/(marketing)/forgot-password/page.tsx`, `app/(marketing)/forgot-password/layout.tsx`, `app/(marketing)/reset-password/page.tsx`, `app/(marketing)/reset-password/layout.tsx`, `app/api/auth/forgot-password/route.ts`, `app/api/auth/reset-password/route.ts`, `lib/email/password-reset.ts`, `scripts/migrate-add-password-reset.ts`.
+**Modified:** `app/(marketing)/login/page.tsx`, `db/schema.sql`.
+
+```
+git add app/(marketing)/forgot-password app/(marketing)/reset-password app/api/auth/forgot-password app/api/auth/reset-password lib/email/password-reset.ts scripts/migrate-add-password-reset.ts "app/(marketing)/login/page.tsx" db/schema.sql architecture.md
+git commit -m "Add self-service forgot-password flow"
+git push
+```
+
+Then, once, against the real production database:
+
+```
+npx tsx scripts/migrate-add-password-reset.ts
+```

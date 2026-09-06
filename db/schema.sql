@@ -10,6 +10,19 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified_at TIMESTAMPTZ,
     verification_token_hash TEXT,
     verification_token_expires_at TIMESTAMPTZ,
+    -- Added 2026-09-06: forgot-password flow. Deliberately separate
+    -- columns from verification_token_hash/_expires_at above rather than
+    -- reusing them - the two flows can legitimately be in progress on the
+    -- same account at once (e.g. a brand-new, not-yet-verified signup
+    -- requests a password reset before ever clicking their verification
+    -- link), and sharing one pair of columns would let one flow silently
+    -- invalidate the other's token. Same hashToken()/never-store-the-raw-
+    -- token pattern as verification - see lib/email/password-reset.ts.
+    -- Expiry is intentionally shorter (1 hour vs. verification's 24) -
+    -- this token grants account access if intercepted, verification's
+    -- only grants "email marked verified".
+    password_reset_token_hash TEXT,
+    password_reset_token_expires_at TIMESTAMPTZ,
     -- Added 2026-09-03: 統一編號 (Taiwan Uniform Business Number),
     -- capture-and-store only for now - see the 2026-09-03 architecture.md
     -- entry for why this isn't wired into Paddle checkout yet.
