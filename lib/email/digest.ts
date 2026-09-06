@@ -3,7 +3,7 @@ import { db } from "../db";
 import { formatCapital, formatDate } from "../utils";
 import { getUserTier } from "../tiers";
 import type { Cadence } from "../tiers";
-import { CADENCE_LOOKBACK_DAYS } from "../cadence";
+import { getCadenceWindow } from "../cadence";
 import { ATTRIBUTION_AGENCY, ATTRIBUTION_NAME_ZH } from "../attribution";
 import {
   maskUniformId,
@@ -261,23 +261,21 @@ export async function sendDigestForSearch(search: DueSearch): Promise<DigestSend
   const tier = await getUserTier(search.userId);
   const isFreeTier = tier === "free";
 
-  // Cadence content window (2026-09-05, direct user instruction): a
-  // daily search's digest should only ever talk about the last ~2 days
-  // of new formations, weekly the last ~7, monthly the last ~30 - NOT
-  // "everything that's accumulated since surfaced_in_digest was last
-  // flipped," which is what this used to be (see the un-windowed query
-  // this replaced, still visible in git history). `now` is captured
-  // once here and reused both for the window boundary and for the `at`
-  // parameter on this email's CSV download link below, so the link
-  // always reproduces exactly what this specific send actually queried
-  // - not "whatever this search currently has" if someone clicks it
-  // later.
+  // Cadence content window (2026-09-05, direct user instruction; fixed
+  // 2026-09-06 - see lib/cadence.ts's getCadenceWindow() for the full
+  // story): a daily search's digest should only ever talk about
+  // yesterday and the day before - two complete calendar days, never a
+  // same-day sliver of "today" - weekly the last 7 complete days,
+  // monthly the last 30, NOT "everything that's accumulated since
+  // surfaced_in_digest was last flipped," which is what this used to be
+  // (see the un-windowed query this replaced, still visible in git
+  // history). `now` is captured once here and reused both for the
+  // window boundary and for the `at` parameter on this email's CSV
+  // download link below, so the link always reproduces exactly what
+  // this specific send actually queried - not "whatever this search
+  // currently has" if someone clicks it later.
   const now = new Date();
-  const lookbackDays =
-    CADENCE_LOOKBACK_DAYS[search.cadence as Cadence] ?? CADENCE_LOOKBACK_DAYS.monthly;
-  const windowStart = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-  const windowStartDate = windowStart.toISOString().slice(0, 10);
-  const windowEndDate = now.toISOString().slice(0, 10);
+  const { windowStartDate, windowEndDate } = getCadenceWindow(search.cadence as Cadence, now);
 
   const newMatches = await sql`
     SELECT c.*, sm.id AS match_id

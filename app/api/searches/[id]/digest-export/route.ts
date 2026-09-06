@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getUserTier } from "@/lib/tiers";
-import { CADENCE_LOOKBACK_DAYS } from "@/lib/cadence";
+import { getCadenceWindow } from "@/lib/cadence";
 import { buildMatchesCsv, safeCsvFilename } from "@/lib/csv-export";
 import { isNarrowResultSet } from "@/lib/masking";
 import type { Company } from "@/types/db";
@@ -32,12 +32,14 @@ import type { Cadence } from "@/lib/tiers";
 // it's masked.
 //
 // Windowing: `at` is the ISO timestamp of the digest run that generated
-// this link (lib/email/digest.ts passes `now` from that same run). The
-// window is [at - cadence's own lookback, at], matching
-// CADENCE_LOOKBACK_DAYS exactly - so this link always reproduces what
-// that specific email actually contained, not "whatever this search
+// this link (lib/email/digest.ts passes `now` from that same run), fed
+// through the same lib/cadence.ts getCadenceWindow() that digest.ts's
+// own query uses - so this link always reproduces exactly what that
+// specific email actually contained, not "whatever this search
 // currently has" (which would drift as new matches accumulate and old
-// ones age out of the window on later visits). Does NOT filter by
+// ones age out of the window on later visits) and not a different
+// window than the email's own query used (see getCadenceWindow's own
+// comment for the off-by-one this fixed on 2026-09-06). Does NOT filter by
 // surfaced_in_digest - by the time a recipient clicks this, digest.ts
 // has already flipped that flag to true for every row it emailed, so
 // filtering on it here would return nothing.
@@ -74,8 +76,7 @@ export async function GET(
     });
   }
 
-  const lookbackDays = CADENCE_LOOKBACK_DAYS[search.cadence] ?? CADENCE_LOOKBACK_DAYS.monthly;
-  const windowStart = new Date(at.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+  const { windowStartDate, windowEndDate } = getCadenceWindow(search.cadence, at);
 
   const tier = await getUserTier(search.user_id);
   const mask = tier === "free";
@@ -99,8 +100,8 @@ export async function GET(
     WHERE sm.saved_search_id = ${search.id}
       AND c.suppressed_at IS NULL
       AND c.registration_date IS NOT NULL
-      AND c.registration_date >= ${windowStart.toISOString().slice(0, 10)}
-      AND c.registration_date <= ${at.toISOString().slice(0, 10)}
+      AND c.registration_date >= ${windowStartDate}
+      AND c.registration_date <= ${windowEndDate}
     ORDER BY c.registration_date DESC NULLS LAST
   `) as Company[];
 
