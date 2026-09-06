@@ -2706,3 +2706,21 @@ git add lib/cadence.ts lib/email/digest.ts "app/api/searches/[id]/digest-export/
 git commit -m "Fix off-by-one in digest cadence window: daily/weekly/monthly were showing N+1 calendar days, not N"
 git push
 ```
+
+## Google Business Profile expectation-setting: pricing-page note on 方案C, and a "just registered" hint next to Google 地圖查詢 — 2026-09-06, continued
+
+Direct user request, with reasoning attached: newly registered companies usually haven't set up a Google Business Profile yet, so clicking "Google 地圖查詢" on one often turns up nothing — and a paying customer discovering that live, with no warning, is far more likely to read it as "this tool doesn't work" and quietly not renew than to complain and give a chance to explain. 方案C (daily plan, NT$1,300/mo) customers are both the highest-paying and the ones most exposed to this, since their daily-cadence digests specifically surface companies only 1-2 days old — by the time a 方案B (weekly) customer sees a company, it's already up to a week old and somewhat more likely to have a profile. Two changes, both purely expectation-setting (no change to what data is fetched or how matching works):
+
+**1. Pricing page.** Added one line directly under 方案C's feature list (`app/(marketing)/pricing/page.tsx`), before its checkout button: "提醒：由於公司多在登記後一段時間才會建立 Google 商家檔案，新登記公司初期於 Google 地圖上的查詢命中率會較低，此為正常現象。" Placed only under 方案C per the user's explicit instruction and the reasoning above (方案B's own weekly delay already softens this somewhat) — not added to 方案A/B, though the same underlying fact is technically true for any tier's Maps link.
+
+**2. Search results page.** `app/(app)/searches/[id]/page.tsx` (both the desktop table and mobile card rendering of the paid-tier "Google 地圖查詢" link) now shows a small gray hint — "登記未滿3天，商家檔案建立機率較低" — next to that link whenever `c.registration_date` is within `RECENT_REGISTRATION_DAYS` (3) of today. New `isRecentRegistration()` helper, anchored on the same Asia/Taipei calendar date `lib/cadence.ts`'s `getCadenceWindow()` uses (now exported from there as `toTaipeiDateString()` specifically so this page could reuse it rather than re-deriving its own and risking drift). The threshold (3, meaning "0, 1, or 2 days old") was deliberately chosen to match the daily-digest window added earlier this session rather than picked independently: a company still inside its own daily-digest window is, by this app's own existing definition, part of the "just registered" population this hint is about. Free-tier rows are unaffected — they never see the real Maps link at all (see the 2026-09-05 masking entry), only the "升級查看地圖" upsell, so there's nothing to caveat there.
+
+**Verified:** applied the identical change to the same sandbox clone used for the digest-window fix above (after that fix's edits, not yet committed/pushed by the user at time of writing — both changes ended up verified together). `npx tsc --noEmit` clean. `npx eslint` on the three touched files (`lib/cadence.ts`, `app/(marketing)/pricing/page.tsx`, `app/(app)/searches/[id]/page.tsx`) showed exactly one error, at a line this session never touched (`Date.now()` in the pre-existing staleness-banner logic, confirmed via `git show HEAD` to already exist before any of this session's edits — one of the log's previously-noted pre-existing eslint errors, not a regression). A standalone script exercised `isRecentRegistration()`'s boundary directly: 0/1/2 days old → hint shown; 3+ days old → not shown; a same-day (offset 0) and a hypothetical future-dated row (defensive, shouldn't occur in practice) both behaved correctly; `null` registration_date handled safely.
+
+**Modified:** `lib/cadence.ts` (`toTaipeiDateString` now exported, no behavior change), `app/(marketing)/pricing/page.tsx`, `app/(app)/searches/[id]/page.tsx`.
+
+```
+git add lib/cadence.ts "app/(marketing)/pricing/page.tsx" "app/(app)/searches/[id]/page.tsx" architecture.md
+git commit -m "Add Google Business Profile expectation-setting: pricing-page note on 方案C, recent-registration hint next to Google 地圖查詢"
+git push
+```
