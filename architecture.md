@@ -2851,3 +2851,27 @@ git add scripts/run-ingest-daily.ts architecture.md
 git commit -m "Widen daily ingestion's discovery lookback to 5 extra days so slow-to-index GCIS registrations aren't missed before the daily digest window closes"
 git push
 ```
+
+## Verified: lookback fix is live on GitHub; production hasn't run it yet — 2026-09-06, new session
+
+Picked up the handoff from the previous session (which had delivered the `run-ingest-daily.ts` lookback fix to the user's machine but hadn't confirmed the push). This session has no `device_bash` on this desktop link (screen-control "computer use" and the local shell are separate grants, and only file staging/commit + browser were available this time) — verification below was done by reading files off the user's machine via `device_stage_files` and comparing against a fresh shallow clone in the sandbox, plus `git ls-remote` and the GitHub Actions web UI (both reachable from this sandbox this session, unlike the "no GitHub API access" note in earlier entries — worth re-testing rather than assuming either way in future sessions).
+
+**Confirmed pushed correctly:** user's local `.git/refs/heads/main` (`0b79bee5...`) matches GitHub's `refs/heads/main` exactly, and `scripts/run-ingest-daily.ts` staged from the user's disk is byte-identical to the version in that commit on GitHub. No delivery drift.
+
+**Confirmed NOT yet exercised in production:** the most recent `ingest-daily.yml` run (#29, succeeded, 1m27s) was triggered by the 2026-09-05 23:33 UTC schedule and ran against commit `ec8428d` — one commit behind the fix. The fix commit (`0b79bee`) hasn't had a scheduled or manual run yet as of this entry (2026-09-06 12:38 UTC / 20:38 Taipei). Next scheduled run is tonight's 22:00 UTC (06:00 Taipei, 2026-09-07) cron fire, ~9.5 hours out from this entry. Runs #25-29 (the last 5) were all successes in the 1m27s-11m5s range, comfortably inside the 20-minute timeout, which is a reasonable baseline for judging whether the wider lookback pushes duration up meaningfully once it runs.
+
+**Not done this session:** actually confirming the fix *worked* (i.e. that the daily-cadence silent-drop rate comes down) — that still needs either the next scheduled run's `ingestion_runs` row (duration, skipped-vs-new counts) or a re-run of `scripts/check-silently-dropped-matches.ts` a few days out, per the previous entry's plan. Left for the user to check after tonight's run, or for whichever session picks this back up.
+
+**Modified:** nothing (verification-only entry).
+
+## Confirmed: the lookback fix has now run in production successfully — 2026-09-07
+
+Run #30 of `ingest-daily.yml` (https://github.com/verymeanguy13-lab/tw-leads-radar/actions/runs/34066948412) ran commit `0b79bee` — the discovery-lookback fix — for the first time. Triggered via schedule at 2026-09-06 23:27 UTC (about 87 minutes later than the nominal 22:00 UTC cron time; GitHub Actions scheduled workflows on lower-traffic repos can slip like this, it's not a sign of a problem with this repo's config). Succeeded, total duration 4m 31s — squarely inside the pre-fix baseline range (1m27s-11m5s across runs #25-29) and nowhere near the 20-minute job timeout, so the wider 5-day lookback plus the `existing`-check short-circuit are behaving as designed: no meaningful cost increase from the extra lookback days.
+
+This confirms the fix deploys and runs cleanly. It does **not** yet confirm the fix worked (i.e. that the daily-cadence silent-drop rate actually came down) — that still needs either this run's `ingestion_runs` row (skipped-vs-new counts) or, better, a re-run of `scripts/check-silently-dropped-matches.ts` after a few more days of runs have accumulated under the new lookback. Still the user's to run whenever convenient:
+
+```
+npx tsx scripts/check-silently-dropped-matches.ts
+```
+
+**Modified:** nothing (verification-only entry).
