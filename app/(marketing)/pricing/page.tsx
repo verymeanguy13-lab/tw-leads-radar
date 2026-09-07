@@ -68,7 +68,15 @@ export default async function PricingPage() {
           <p className="text-xs text-secondary text-center mt-2">{"\u4e0d\u9700\u4fe1\u7528\u5361"}</p>
         </div>
 
-        <div className="border border-default rounded-lg p-6 bg-card">
+        {/* 2026-09-07: id + scroll-mt added so the homepage's new
+            "\u7acb\u5373\u5347\u7d1a \u2192" teaser cards (app/(marketing)/page.tsx) can deep
+            link straight to this specific plan via /pricing#plan-b /
+            #plan-c, instead of just landing at the top of a page with
+            three plans and making the visitor re-find the one they
+            clicked. scroll-mt-8 is a small buffer only - this page has
+            no sticky header today, but it costs nothing to not land
+            flush at the very top edge. */}
+        <div id="plan-b" className="border border-default rounded-lg p-6 bg-card scroll-mt-8">
           <h2 className="font-semibold text-lg mb-1">{"\u65b9\u6848B\uff5c\u9031\u5831\u65b9\u6848"}</h2>
           <p className="text-2xl font-bold mb-1">NT$600 {"/ \u6708"}</p>
           <p className="text-sm text-secondary mb-4">
@@ -89,7 +97,7 @@ export default async function PricingPage() {
           />
         </div>
 
-        <div className="border border-default rounded-lg p-6 bg-card">
+        <div id="plan-c" className="border border-default rounded-lg p-6 bg-card scroll-mt-8">
           <h2 className="font-semibold text-lg mb-1">{"\u65b9\u6848C\uff5c\u6bcf\u65e5\u65b9\u6848\uff08\u9032\u968e\uff09"}</h2>
           <p className="text-2xl font-bold mb-1">NT$1,300 {"/ \u6708"}</p>
           <p className="text-sm text-secondary mb-4">

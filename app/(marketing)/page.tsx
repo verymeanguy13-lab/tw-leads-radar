@@ -76,15 +76,38 @@ export default function LandingPage() {
             <p className="text-secondary text-sm mb-4">每月一次摘要，適合先觀察市場動態。</p>
             <p className="text-xl font-bold">NT$0</p>
           </div>
-          <div className="border border-default rounded-lg p-6 text-center bg-card">
+          {/* 2026-09-07: 方案B/C teaser cards on the homepage used to be
+              plain, unclickable <div>s - the only way from here to
+              actually upgrade was the small "查看完整方案內容與功能比較"
+              link below the grid. Direct user request to make upgrading
+              more prominent/enticing: both paid cards are now full
+              <Link>s straight to their own plan on /pricing (#plan-b /
+              #plan-c, ids added on that page below), with a hover
+              lift+shadow and an always-visible "立即升級 →" CTA line (not
+              hover-only, so it's just as discoverable on mobile, which
+              has no hover state at all). 免費方案 deliberately stays a
+              plain, non-clickable div - there's nothing to "upgrade" to
+              on the free card, and the user's own ask was specifically
+              about making the PAID plans more enticing, not this one. */}
+          <Link
+            href="/pricing#plan-b"
+            className="group border border-default rounded-lg p-6 text-center bg-card block transition-shadow duration-150 hover:shadow-lg"
+          >
             <p className="text-sm font-semibold mb-1">方案B｜週報方案</p>
             <p className="text-secondary text-sm mb-4">
               每週摘要，掌握新客戶的速度比免費方案快約 4 倍。
             </p>
-            <p className="text-xl font-bold">NT$600 / 月</p>
-          </div>
-          <div
-            className="border-2 rounded-lg p-6 text-center bg-card relative"
+            <p className="text-xl font-bold mb-2">NT$600 / 月</p>
+            <p
+              className="text-xs font-semibold group-hover:underline"
+              style={{ color: "var(--accent)" }}
+            >
+              立即升級 →
+            </p>
+          </Link>
+          <Link
+            href="/pricing#plan-c"
+            className="group border-2 rounded-lg p-6 text-center bg-card relative block transition-shadow duration-150 hover:shadow-lg"
             style={{ borderColor: "var(--accent)" }}
           >
             <span
@@ -97,8 +120,14 @@ export default function LandingPage() {
             <p className="text-secondary text-sm mb-4">
               每日摘要，新公司登記隔天就送到你手上——比免費方案快約 30 倍搶得第一次接觸機會。
             </p>
-            <p className="text-xl font-bold">NT$1,300 / 月</p>
-          </div>
+            <p className="text-xl font-bold mb-2">NT$1,300 / 月</p>
+            <p
+              className="text-xs font-semibold group-hover:underline"
+              style={{ color: "var(--accent)" }}
+            >
+              立即升級 →
+            </p>
+          </Link>
         </div>
         <div className="text-center mt-8">
           <Link
