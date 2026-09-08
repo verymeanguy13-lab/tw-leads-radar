@@ -3039,3 +3039,26 @@ git add "app/(marketing)/page.tsx" "app/(marketing)/pricing/page.tsx" "app/(mark
 git commit -m "Add 商業（獨資合夥）monthly-cadence disclaimer to homepage, /search, and /pricing — GCIS/MOEA has no real-time data source for business entities, only an incomplete monthly dataset, so daily notification claims never applied to them"
 git push
 ```
+
+## Added site-wide copyright notice to Footer.tsx; declined a proposed change to the government-data attribution line — 2026-09-08 (continued session)
+
+User asked to replace the existing "經濟部商業發展署 [年] [dataset name]" attribution lines (rendered by `DataAttribution.tsx`/`Footer.tsx`, 6 of them, one per licensed dataset) with a vaguer "經濟部商業署" to make the site's exact data sourcing harder for a copycat to reverse-engineer.
+
+**Recommended against this, and it was not made.** Two independent problems, both checked against real sources rather than assumed:
+
+1. **"經濟部商業署" isn't a real name.** The agency was renamed 經濟部商業司 → 經濟部商業發展署 on 2023-09-26. The site's existing `ATTRIBUTION_AGENCY`/`AGENCY` constants (`lib/attribution.ts`, `Footer.tsx`) already use the correct current name - the proposed change would have made the site's own citation *wrong*, not just less specific.
+2. **The specific dataset name isn't optional styling - it's the mandatory attribution format.** Checked GCIS's own open-data FAQ directly: the 政府資料開放授權條款 requires the exact format "提供機關/單位 [年份] [開放資料釋出名稱與版本號]" - agency AND dataset name AND year, all three. The license text states that non-compliant attribution is "視為自始未取得開放資料之授權" (treated as if authorization was never granted, retroactively) - i.e. simplifying this could cost the legal right to use the underlying data this entire product depends on, a materially bigger risk than the competitive-moat concern it was meant to address. Also noted for the user: these 6 dataset names are already public on Taiwan's open-data portal, so hiding them from this site's own footer doesn't actually deny a copycat anything they couldn't find in five minutes elsewhere.
+
+User accepted this reasoning; no code changed for this part. `DataAttribution.tsx`/`Footer.tsx`'s `ALL_SIX_DATASETS` list is unchanged.
+
+**Second part of the same request - added a copyright notice.** New paragraph in `components/Footer.tsx`, below the existing attribution block and policy links: `© {CURRENT_YEAR} 新公司快報. 版權所有，保留一切權利。（本站所使用之政府開放資料仍依原授權條款規範，不在此聲明範圍內。）`. Deliberately worded to exclude the government open data displayed above it from the ownership claim - this site doesn't own that data and shouldn't imply otherwise, regardless of what a footer claims. Uses the site's own brand name ("新公司快報" - same name already registered with NewebPay) rather than a personal legal name or incorporated entity (neither exists yet): copyright requires no registration or named legal entity to be valid under Taiwan's Copyright Act or the Berne Convention, so a brand-only notice is both effective and keeps personal identity off the public footer. Explicitly not a substitute for the separate, already-flagged "not incorporated, taking real revenue" legal backlog item (consumer-protection operator-disclosure requirements are a different question from what name sits in a copyright line) - noted to the user as unrelated so one doesn't get mistaken for resolving the other.
+
+**Verified:** static JSX/text-only addition (one new `<p>` string literal), reuses the already-defined `CURRENT_YEAR` constant so it can't drift out of sync with the attribution block above it. Not run through `tsc`/`eslint` this pass, same as the previous entry's disclaimer additions - user's usual `npx tsc --noEmit` / `npx eslint .` still recommended as a sanity check.
+
+**Modified:** `components/Footer.tsx`.
+
+```
+git add components/Footer.tsx architecture.md
+git commit -m "Add site-wide copyright notice to Footer.tsx, scoped to exclude the government open data it sits next to; declined a proposed simplification of the open-data attribution line after confirming it would both misname the agency and violate the license's mandatory attribution format"
+git push
+```

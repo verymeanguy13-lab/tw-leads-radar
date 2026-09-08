@@ -28,6 +28,25 @@ export default function Footer() {
           資料移除請求
         </Link>
       </p>
+      {/* 2026-09-08: added on explicit user request ("copyright of content
+          on this website belongs to me"). Deliberately scoped to this
+          site's own compiled content/software/design, NOT the underlying
+          government open data above (which stays under its own 政府資料
+          開放授權條款 regardless of anything claimed here) - the
+          parenthetical exists specifically to avoid the notice reading as
+          an overclaim over public-sector data this site doesn't own.
+          Uses the site's own brand name rather than a personal legal name
+          or an incorporated entity (neither exists yet - see
+          architecture.md's "not incorporated" legal backlog item), on the
+          reasoning that a copyright notice needs no registered or legal
+          name to be valid under Taiwan's Copyright Act / the Berne
+          Convention - it's a deterrent signal, not a filing - and this is
+          the same brand name already registered with NewebPay. CURRENT_YEAR
+          reuses the constant already defined above for DataAttribution, so
+          this never drifts out of sync with it. */}
+      <p className="text-xs text-secondary mt-3">
+        {`© ${CURRENT_YEAR} 新公司快報. 版權所有，保留一切權利。（本站所使用之政府開放資料仍依原授權條款規範，不在此聲明範圍內。）`}
+      </p>
     </footer>
   );
 }
