@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { decryptTradeInfo, computeTradeSha } from "@/lib/newebpay-api";
+import { decryptTradeInfo, computeTradeSha, alterNewebpayPeriodStatus } from "@/lib/newebpay-api";
 
 // 2026-09-04 — 藍新 (NewebPay) NotifyURL handler for 信用卡定期定額
 // (recurring credit card) charges. Mirrors app/api/webhooks/paddle/
@@ -100,11 +100,17 @@ export async function POST(req: NextRequest) {
     // order (inserted at checkout-initiation time — not yet built) and
     // create the real subscription row.
     const pendingRows = await sql`
-      SELECT user_id, tier, business_use_confirmed_at FROM newebpay_pending_orders
+      SELECT user_id, tier, business_use_confirmed_at, supersedes_period_no
+      FROM newebpay_pending_orders
       WHERE merchant_order_no = ${merchantOrderNo} AND claimed_at IS NULL
     `;
     const pending = pendingRows[0] as
-      | { user_id: string; tier: string; business_use_confirmed_at: string | null }
+      | {
+          user_id: string;
+          tier: string;
+          business_use_confirmed_at: string | null;
+          supersedes_period_no: string | null;
+        }
       | undefined;
 
     if (pending) {
@@ -126,6 +132,53 @@ export async function POST(req: NextRequest) {
         UPDATE newebpay_pending_orders SET claimed_at = now()
         WHERE merchant_order_no = ${merchantOrderNo}
       `;
+
+      // 2026-09-08 — plan-switch (see app/api/checkout/newebpay-switch/
+      // route.ts): this order was created specifically to REPLACE an
+      // existing Period commitment, named here rather than at
+      // checkout-initiation time — see that route's header comment for
+      // why the termination must wait until here (the new commitment is
+      // now confirmed paid; terminating any earlier would risk leaving a
+      // customer who abandons checkout with nothing active at all).
+      //
+      // Deliberately does NOT fail or roll back the new subscription
+      // above if this fails — the customer has already been charged for
+      // the new plan, and that must stand regardless. If AlterStatus
+      // doesn't return success, the old commitment's `subscriptions` row
+      // is intentionally left untouched (still 'active') rather than
+      // marked canceled here — marking it canceled without confirmation
+      // that NewebPay actually stopped billing it would make this app
+      // silently misreport its own billing state. The console.error
+      // below is the only signal that will exist for this — **no retry,
+      // alerting, or admin UI surfaces this today**; someone needs to
+      // grep production logs (or eyeball NewebPay's own back office
+      // periodically) to catch a stuck double-billing case until that's
+      // built. Flagging this now rather than letting it be a silent gap.
+      if (pending.supersedes_period_no) {
+        try {
+          const alterResult = await alterNewebpayPeriodStatus(
+            pending.supersedes_period_no,
+            "terminate"
+          );
+          if (alterResult.success) {
+            await sql`
+              UPDATE subscriptions
+              SET status = 'canceled', canceled_at = now(), updated_at = now()
+              WHERE newebpay_period_no = ${pending.supersedes_period_no}
+            `;
+          } else {
+            console.error(
+              `NewebPay webhook: AlterStatus terminate returned non-success for superseded period ${pending.supersedes_period_no} (plan switch to new period ${periodNo}) — the OLD commitment is likely still active and MAY KEEP CHARGING at its old tier's price. Manual intervention required: terminate ${pending.supersedes_period_no} directly in NewebPay's back office.`,
+              alterResult
+            );
+          }
+        } catch (err) {
+          console.error(
+            `NewebPay webhook: error calling AlterStatus terminate for superseded period ${pending.supersedes_period_no} (plan switch to new period ${periodNo}) — manual intervention required to avoid double-billing.`,
+            err
+          );
+        }
+      }
     } else {
       // Recurring (non-first) charge on an already-claimed order, or a
       // notify for an order this app has no pending row for (e.g. the

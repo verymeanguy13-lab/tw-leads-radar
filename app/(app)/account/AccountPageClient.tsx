@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import NewebpayCheckoutButton from "@/components/NewebpayCheckoutButton";
+import NewebpaySwitchPlanButton from "@/components/NewebpaySwitchPlanButton";
 
 // Session 21 — Account & Billing Settings.
 //
@@ -56,6 +57,21 @@ import NewebpayCheckoutButton from "@/components/NewebpayCheckoutButton";
 // changes their mind before the period ends, they'd need to contact
 // support for now, or simply re-subscribe via checkout once the old
 // subscription actually lapses.
+//
+// 2026-09-08: added the "變更方案" section below (NewebpaySwitchPlanButton)
+// — the self-service plan-switch button that was missing entirely until
+// now (2026-09-05's removal above was Paddle-only; nothing NewebPay-based
+// ever existed to replace it, so a NewebPay subscriber who wanted to move
+// between Plan B/C had no in-product way to do it at all, only email
+// support). Gated on `info.processor === "newebpay_period"` (added to
+// GET /api/account the same day — see that route's comment) rather than
+// `info.tier !== "free"` alone, since that alone can't tell a Paddle
+// subscriber from a NewebPay one, and this button only works for the
+// latter — see app/api/checkout/newebpay-switch/route.ts for why. Also
+// hidden once `scheduledCancellation` is true — switching plans on a
+// subscription that's already ending makes little sense, and would just
+// create a second, differently-priced commitment on top of a customer
+// who's in the middle of leaving.
 
 interface AccountInfo {
   tier: "free" | "pro" | "business";
@@ -71,6 +87,10 @@ interface AccountInfo {
   autoRenew: boolean;
   updatePaymentMethodUrl: string | null;
   paddleUnreachable?: boolean;
+  // 2026-09-08: "paddle" | "newebpay_period" | "newebpay_yearly" | null —
+  // see GET /api/account's comment on why this is needed alongside
+  // tier/autoRenew, not instead of them.
+  processor: "paddle" | "newebpay_period" | "newebpay_yearly" | null;
   vatId: string | null;
 }
 
@@ -200,6 +220,18 @@ export default function AccountPageClient({ userId }: Props) {
           </>
         )}
       </div>
+
+      {info.tier !== "free" &&
+        info.processor === "newebpay_period" &&
+        !info.scheduledCancellation && (
+          <div className="border border-default rounded-lg p-6 mb-6">
+            <p className="font-semibold mb-4">{"變更方案"}</p>
+            <NewebpaySwitchPlanButton
+              targetTier={info.tier === "pro" ? "business" : "pro"}
+              direction={info.tier === "pro" ? "upgrade" : "downgrade"}
+            />
+          </div>
+        )}
 
       <div className="border border-default rounded-lg p-6 mb-6">
         <p className="text-sm text-secondary mb-1">{"統一編號（選填）"}</p>

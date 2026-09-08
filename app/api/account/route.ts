@@ -40,6 +40,17 @@ import { NextResponse } from "next/server";
 // the response (false only for this one-time case) so the account page
 // can show "有效至 [date]，不會自動續約" instead of a cancel button that
 // doesn't apply — there's no recurring charge to cancel.
+//
+// 2026-09-08: added an explicit `processor` field ("paddle" |
+// "newebpay_period" | "newebpay_yearly" | null) to every branch below.
+// Before this, the client had no reliable way to tell a Paddle
+// subscriber apart from a NewebPay Period subscriber — both report
+// `autoRenew: true` and a real paid `tier`. That distinction didn't
+// matter until now (cancel already worked identically for both — see
+// app/api/account/cancel/route.ts), but the new self-service plan-switch
+// button (app/api/checkout/newebpay-switch/route.ts) only works for a
+// NewebPay Period subscriber, so AccountPageClient.tsx needs a real
+// signal to gate on rather than guessing from tier/autoRenew alone.
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -110,6 +121,7 @@ export async function GET() {
         scheduledCancellation: false,
         autoRenew: false,
         updatePaymentMethodUrl: null,
+        processor: null,
         vatId,
       });
     }
@@ -122,6 +134,15 @@ export async function GET() {
         scheduledCancellation: sub.canceled_at !== null,
         autoRenew: true,
         updatePaymentMethodUrl: null,
+        // 2026-09-08: added so the account page can reliably tell a
+        // NewebPay Period subscriber apart from a Paddle one — both look
+        // identical from `tier`/`autoRenew` alone (both paid, both
+        // recurring), but only a NewebPay Period subscriber can use the
+        // new self-service plan-switch button
+        // (app/api/checkout/newebpay-switch/route.ts) — Paddle has its
+        // own change-plan route instead. See
+        // AccountPageClient.tsx's gating on this field.
+        processor: "newebpay_period",
         vatId,
       });
     }
@@ -137,6 +158,7 @@ export async function GET() {
         scheduledCancellation: false,
         autoRenew: false,
         updatePaymentMethodUrl: null,
+        processor: "newebpay_yearly",
         vatId,
       });
     }
@@ -151,6 +173,7 @@ export async function GET() {
         scheduledCancellation: paddleSub.scheduled_change?.action === "cancel",
         autoRenew: true,
         updatePaymentMethodUrl: paddleSub.management_urls?.update_payment_method ?? null,
+        processor: "paddle",
         vatId,
       });
     } catch (err) {
@@ -167,6 +190,7 @@ export async function GET() {
         autoRenew: true,
         updatePaymentMethodUrl: null,
         paddleUnreachable: true,
+        processor: "paddle",
         vatId,
       });
     }

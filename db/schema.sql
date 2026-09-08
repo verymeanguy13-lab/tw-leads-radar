@@ -104,7 +104,16 @@ CREATE TABLE IF NOT EXISTS newebpay_pending_orders (
     -- confirmed at checkout-initiation time. See the matching column on
     -- `subscriptions` for why this is copied forward instead of only
     -- living here - migrate-add-business-use-confirmation.ts adds both.
-    business_use_confirmed_at TIMESTAMPTZ
+    business_use_confirmed_at TIMESTAMPTZ,
+    -- Added 2026-09-08: set only by app/api/checkout/newebpay-switch/
+    -- route.ts (an existing monthly Period subscriber switching between
+    -- Plan B/pro and Plan C/business), never by the ordinary new-purchase
+    -- route. Names the OLD newebpay_period_no this pending order should
+    -- terminate once IT is confirmed paid — see
+    -- app/api/webhooks/newebpay/route.ts's handling of this field and
+    -- migrate-add-supersedes-period-no.ts. NULL for every ordinary
+    -- purchase.
+    supersedes_period_no TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_newebpay_pending_orders_user_id ON newebpay_pending_orders(user_id);
