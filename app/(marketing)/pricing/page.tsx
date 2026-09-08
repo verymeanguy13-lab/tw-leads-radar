@@ -152,6 +152,22 @@ export default async function PricingPage() {
       <p className="text-xs text-secondary text-center mt-10 max-w-xl mx-auto">
         {"\u8aaa\u660e\uff1a\u514d\u8cbb\u65b9\u6848\u4e4b\u641c\u5c0b\u7d50\u679c\u8207\u96fb\u5b50\u90f5\u4ef6\u901a\u77e5\uff0c\u7d71\u4e00\u7de8\u865f\u3001\u516c\u53f8\u540d\u7a31\u8207\u8ca0\u8cac\u4eba\u59d3\u540d\u5c07\u90e8\u5206\u906e\u853d\u4ee5\u4fdd\u8b77\u7576\u4e8b\u4eba\u96b1\u79c1\uff1b\u5730\u5340\u3001\u884c\u696d\u5225\u7b49\u5176\u4ed6\u6b04\u4f4d\u4e0d\u53d7\u5f71\u97ff\u3002\u5347\u7d1a\u4ed8\u8cbb\u65b9\u6848\u5373\u53ef\u770b\u5230\u5b8c\u6574\u672a\u906e\u853d\u8cc7\u6599\u3002"}
       </p>
+
+      {/* 2026-09-08: added on explicit user request. An older code comment
+          in this file claimed a footnote like this already existed here
+          ("matches the pricing page's own footnote" - see architecture.md
+          around the \u5546\u696d gate-condition entry), but it had been trimmed out
+          at some point - this page had no \u5546\u696d/cadence disclaimer at all
+          before this change. Real mechanism: \u516c\u53f8 (company) entities have a
+          live/daily GCIS source; \u5546\u696d (\u7368\u8cc7\u5408\u5925) entities do not - MOEA/GCIS
+          only ever publishes an incomplete monthly dataset for them (6 of
+          Taiwan's cities, 5 of 11 industry categories), so \u5546\u696d stays
+          monthly-cadence on every tier including \u65b9\u6848C regardless of what's
+          paid for. Without this, \u65b9\u6848C's "\u6bcf\u65e5\u65b9\u6848" name overclaims for
+          anyone specifically after \u5546\u696d/\u7368\u8cc7\u5408\u5925 leads. */}
+      <p className="text-xs text-secondary text-center mt-4 max-w-xl mx-auto">
+        {"\u8aaa\u660e\uff1a\u300c\u6bcf\u65e5\u901a\u77e5\u300d\u50c5\u9069\u7528\u65bc\u516c\u53f8\uff08\u6709\u9650\u516c\u53f8\uff0f\u80a1\u4efd\u6709\u9650\u516c\u53f8\uff09\u65b0\u8a2d\u7acb\u8cc7\u6599\u3002\u5546\u696d\uff08\u7368\u8cc7\u5408\u5925\uff09\u767b\u8a18\u8cc7\u6599\u56e0\u7d93\u6fdf\u90e8\u672a\u516c\u958b\u5373\u6642\u8cc7\u6599\u4f86\u6e90\uff0c\u50c5\u63d0\u4f9b\u6bcf\u6708\u66f4\u65b0\u7684\u6e05\u55ae\uff0c\u6545\u5546\u696d\u985e\u5225\u7684\u901a\u77e5\u983b\u7387\u6240\u6709\u65b9\u6848\uff08\u542b\u65b9\u6848C\uff09\u7686\u70ba\u6bcf\u6708\u4e00\u6b21\uff0c\u4e0d\u56e0\u5347\u7d1a\u800c\u52a0\u5feb\u3002"}
+      </p>
     </div>
   );
 }

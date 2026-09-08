@@ -2981,4 +2981,61 @@ git push
 ```
 
 **Still needed before this can process a real switch:** run `npx tsx scripts/migrate-add-supersedes-period-no.ts` against production's database once this is deployed — same one-time-migration step every prior schema change in this project has needed, not automatic on deploy.
+
+## 藍新 (NewebPay) 個人 merchant registration: store created, bank account added — 2026-09-08
+
+Direct continuation of the registration walkthrough from the 2026-09-07 entry (which left off at "user was logging into their new NewebPay account after OTP verification"). This entry is a business/account-setup log, not a code change — no files in this repo were touched by the work described here.
+
+**會員身分驗證 (member identity verification, step 1 of NewebPay's 3-step setup checklist) was already complete** by the time this session picked back up — shown with a green checkmark on the member dashboard. Not verified how/when this completed (presumably automatic or fast manual review after the ID-photo upload done in the prior session).
+
+**開立商店 (store creation, step 2) — completed, after two failed attempts.** Two real problems surfaced and are worth remembering for any future NewebPay (or similar) browser-based work:
+
+1. **NewebPay's session auto-logs-out after roughly 8-10 minutes of inactivity, and the store-creation form does not autosave.** Lost the entire filled-in form to this twice — once mid-walkthrough (the field-by-field, confirm-each-section pace was too slow), and a second time when only part of a fast "fill everything then submit" pass actually happened before hitting submit. Fix that worked: re-fill fast in one pass without waiting for confirmation between fields, using `Claude_Browser__form_input` directly (with the user's explicit permission) rather than dictating field-by-field.
+2. **A real, non-obvious environment gotcha: this browser pane silently suppresses native JavaScript `alert()`/`confirm()` dialogs.** When the second submit attempt appeared to "do nothing," the actual cause was that NewebPay's own client-side validation WAS firing `alert("尚有必填欄位未填寫，請重新確認")` — but the dialog never reached the screen, because native dialogs are disabled in this browser tool (confirmed via `read_console_messages`, which showed `[Claude browser] Page dialog suppressed (alert): ...` entries). **Lesson for future sessions: whenever a button click on a real third-party site "does nothing," check `read_console_messages` for suppressed-dialog entries before assuming the click failed to register** — the site may be trying to communicate something that never reaches the visible page.
+
+Once actually filled in correctly, the form submitted successfully. Registered as:
+- 商店名稱: 新公司快報 / 商店英文名稱: New Company Bulletin (deliberately matching the site's real displayed name and `<title>` tag, not "TaiwanLeads" — per the 2026-09-06 status-check entry's flagged risk about NewebPay's store-name-consistency requirement)
+- 商店網址: https://taiwanleads.com
+- 商店類別: 網路商店 / 販售類別: 服務 / 行業別: 7372-網路資訊服務
+- 客服信箱 / 爭議款信箱: contact@taiwanleads.com / 客服電話: 0937-127509
+- 商店中文地址: 台北市文山區木柵路一段378巷22號4樓 (matches the 商店英文地址 already on file: "Mucha Road Sec 1. Lane 378 No. 22 4th Fl Taipei, Taiwan")
+- 商店簡介: a short description matching the site's own homepage/Terms language
+- 商店圖片 (門牌照片/網站截圖/商品照片1-3): left blank — confirmed optional (no red ※ marker on this field specifically, unlike every other field on the form)
+
+Result: **商店已建立完成** — NewebPay's confirmation modal states review takes 1-2 business days for a first store, notified by email.
+
+**金融帳戶 (bank account, step 3) — also completed the same session**, via the "填寫金融帳戶" shortcut NewebPay's own success modal offered ("想加快收款？可先填寫金融帳戶，方便後續提領。（選填）" — confirmed optional, offered as a convenience). Registered:
+- 主金融機構: 國泰世華商業銀行 (Cathay United Bank) / 分行: 文山分行
+- 戶名: 經世榮 (auto-filled from the member's own profile — matches NewebPay's stated rule that an individual account's 戶名 must equal the member's own legal name)
+- 帳號 and 存摺影本 (passbook photo): entered/uploaded directly by the user, not by Claude — both are real financial-account identifiers, kept outside anything Claude typed or handled, per the standing boundary established at the start of this registration effort ("I cannot perform the actual account creation, password entry, or ID/health-card photo uploads myself").
+
+Status shown: 待驗證 (pending verification) — NewebPay's own notice states this takes about 5 business days, and that NewebPay's services remain usable normally during that window.
+
+**Net result: all three of NewebPay's setup-checklist steps are now submitted.** Nothing further to do on the NewebPay side until two separate emails arrive: the store review result (~1-2 business days) and the bank account verification result (~5 business days). Once both clear, NewebPay issues the real `NEWEBPAY_MERCHANT_ID`/`NEWEBPAY_HASH_KEY`/`NEWEBPAY_HASH_IV` credentials from the merchant back office — those still need to be located there and set in Vercel's production env (plus `.env.local` for local dev), exactly as every NewebPay code entry in this file has been saying since 2026-09-04.
+
+**Also worth flagging plainly: the previous entry's plan-switch feature (`scripts/migrate-add-supersedes-period-no.ts` and the other 6 files) was delivered to the user's local machine and this file's own git commands were given to her, but this session never got confirmation that `git add`/`commit`/`push` was actually run, that Vercel deployed it, or that the migration script was executed against production.** Unlike every other code entry in this file, this one is not closed out with a verified-pushed confirmation — check `git log` on the real repo for a commit titled "Add self-service NewebPay plan-switch..." before assuming it's live.
+
+**Modified:** nothing in this repo (registration/account-setup log only).
+```
+
+## Confirmed plan-switch deployment; added 商業/獨資合夥 monthly-cadence disclaimer to marketing pages — 2026-09-08 (continued session)
+
+**Part 1 — closed out the previous entry's open item.** That entry ended by flagging that the plan-switch feature (`scripts/migrate-add-supersedes-period-no.ts` + 6 other files) had never been confirmed committed/pushed/deployed/migrated. This continued session verified all four, without the user needing to run `git log` themselves: this session's device bridge to the user's machine did not expose a remote-shell tool this time (no `device_bash` — only file list/stage/commit), so git state was confirmed by reading `.git/COMMIT_EDITMSG` and comparing `.git/refs/heads/main` against `.git/refs/remotes/origin/main` directly (both point at `e6d532e`, matching the expected commit message exactly) rather than running `git log`. Vercel's dashboard (browser, already-authenticated session) confirmed deployment `e6d532e` as Status Ready / Current / Production, live on www.taiwanleads.com. The user then ran the migration in their own terminal and confirmed the expected "Migration complete." output. Nothing left open from that entry.
+
+**Part 2 — new work, user-initiated.** User asked for a statement somewhere relevant on the site explaining that 商業 (business/sole-proprietorship) data lags due to a government (MOEA/GCIS) publishing limitation. Real mechanism, already true of the backend (see the 商業 gate-condition entry above, and the daily-vs-monthly split noted since Session-era ingestion work): 公司 (company) entities have a real live/daily GCIS data source; 商業 (獨資合夥) entities do not — GCIS/MOEA has never published a real-time feed for them, only an incomplete monthly dataset (6 of Taiwan's cities, 5 of 11 industry categories), so 商業 stays monthly-cadence on every subscription tier, including 方案C, regardless of what's paid for.
+
+Before this session, the site's copy did not disclose this anywhere — two places made a blanket "每日"/"30倍" cadence claim with no 商業 carve-out (homepage's 方案C teaser card, and the `/search` page's non-paid-visitor upsell card), and `/pricing` had no cadence disclaimer at all despite an older code comment (see this file's earlier `entity_type = 'business'` gate-condition entry) claiming one existed there — it must have been trimmed at some point since. Added a short disclaimer (homepage, `/search`) or slightly longer one (`/pricing`, where there was no existing footnote to keep consistent with) at all three locations, drafted and approved by the user before implementation:
+
+- Homepage: `＊「每日」僅適用於公司（有限公司／股份有限公司）登記資料。商業（獨資／合夥）登記因經濟部未提供即時資料來源，所有方案均為每月更新。` — placed below the three-plan cadence grid, above the "查看完整方案內容與功能比較" link.
+- `/search`: same short text, placed inside the existing non-paid-visitor cadence upsell card, right after the existing "30倍" claim paragraph.
+- `/pricing`: longer version (`說明：「每日通知」僅適用於公司...故商業類別的通知頻率所有方案（含方案C）皆為每月一次，不因升級而加快。`), added as a new footnote paragraph below the existing free-tier redaction footnote.
+
+**Verified:** files edited and delivered back to the user's machine via the device bridge (mtime-guarded commit, no overwrite risk). Not run through `tsc`/`eslint` this pass — these are static JSX/text-only additions (a `<p>` element with a string literal) in files otherwise untouched, no logic or types affected. User should still run their usual `npx tsc --noEmit` / `npx eslint .` before or after pushing as a sanity check, consistent with every other code change in this file.
+
+**Modified:** `app/(marketing)/page.tsx`, `app/(marketing)/pricing/page.tsx`, `app/(marketing)/search/page.tsx`.
+
+```
+git add "app/(marketing)/page.tsx" "app/(marketing)/pricing/page.tsx" "app/(marketing)/search/page.tsx" architecture.md
+git commit -m "Add 商業（獨資合夥）monthly-cadence disclaimer to homepage, /search, and /pricing — GCIS/MOEA has no real-time data source for business entities, only an incomplete monthly dataset, so daily notification claims never applied to them"
+git push
 ```

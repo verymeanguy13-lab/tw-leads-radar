@@ -428,6 +428,19 @@ export default async function PublicSearchPage({
             免費方案每月通知一次；方案C每日通知，新公司登記隔天就送達你的信箱，比免費方案快約 30
             倍搶得第一次接觸機會。
           </p>
+          {/* 2026-09-08: added on explicit user request, same reasoning as
+              the matching homepage/pricing-page disclaimers added the same
+              day - the "每日"/"30倍" claim above only holds for 公司
+              entities (real live/daily GCIS source); 商業（獨資合夥）has no
+              such source - MOEA/GCIS only ever publishes an incomplete
+              monthly dataset for it - so it stays monthly-only on every
+              tier including 方案C. This card is the most likely place a
+              visitor filtering specifically for 商業（獨資合夥）(see the
+              entity-type radio further down this same page) would form a
+              wrong expectation from, so it gets the disclaimer too. */}
+          <p className="text-xs text-secondary mb-2">
+            {"＊「每日」僅適用於公司（有限公司／股份有限公司）登記資料。商業（獨資／合夥）登記因經濟部未提供即時資料來源，所有方案均為每月更新。"}
+          </p>
           <Link href="/pricing" className="text-sm underline" style={{ color: "var(--accent)" }}>
             查看每日通知方案 →
           </Link>

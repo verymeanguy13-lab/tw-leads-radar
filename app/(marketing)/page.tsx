@@ -129,6 +129,18 @@ export default function LandingPage() {
             </p>
           </Link>
         </div>
+        {/* 2026-09-08: disclaimer added on explicit user request - the
+            "每日"/"30倍" cadence claims above are true for 公司 (company)
+            entities, which have a real daily data source, but NOT for 商業
+            (獨資合夥) entities: GCIS/MOEA never publishes a real-time feed
+            for those, only an incomplete monthly dataset (6 of Taiwan's
+            cities, 5 of 11 industry categories - see architecture.md's
+            ingestion notes), so 商業 stays monthly-only on every plan
+            including 方案C. Without this note the Plan C card overclaims
+            for anyone specifically hunting 商業/獨資合夥 leads. */}
+        <p className="text-xs text-secondary text-center max-w-2xl mx-auto mt-4">
+          {"＊「每日」僅適用於公司（有限公司／股份有限公司）登記資料。商業（獨資／合夥）登記因經濟部未提供即時資料來源，所有方案均為每月更新。"}
+        </p>
         <div className="text-center mt-8">
           <Link
             href="/pricing"
