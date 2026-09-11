@@ -3062,3 +3062,67 @@ git add components/Footer.tsx architecture.md
 git commit -m "Add site-wide copyright notice to Footer.tsx, scoped to exclude the government open data it sits next to; declined a proposed simplification of the open-data attribution line after confirming it would both misname the agency and violate the license's mandatory attribution format"
 git push
 ```
+
+## 3-day Resend deliverability re-check fired: original spam complaint confirmed resolved — 2026-09-09
+
+Scheduled reminder (`trig_01Q2ncvRaEGBcLYvZFF8X7oF`) fired unattended, no user present. Executed the check it was set up for directly via the built-in browser, using the linked desktop's Gmail session (`verymeanguy13@gmail.com`, already signed in).
+
+**Test performed:** requested a password reset for `verymeanguy13@gmail.com` first (taiwanleads.com/forgot-password) — the generic "if this account exists, we sent a link" response came back, but no email arrived in inbox or spam after ~20 seconds. Likely explanation, not confirmed: this account may have signed up via Google OAuth, which would have no password credential to reset, so the endpoint's account-enumeration-safe generic response fired without an email actually being queued. Not investigated further since it wasn't the point of this check.
+
+Switched to the more direct test: signed up a fresh account at taiwanleads.com/signup using a Gmail "+" alias of the same inbox (`verymeanguy13+resendtest0909@gmail.com`, business name "Deliverability Test", type "其他") so the resulting verification email would be both a genuine Resend-sent transactional email and checkable in the same already-open Gmail session. Signup succeeded immediately ("請驗證您的電子郵件" screen shown).
+
+**Result: the original complaint is resolved.** The verification email (`from: notify@taiwanleads.com`, subject "請驗證您的電子郵件 — 新公司快報") arrived in the Gmail **Primary inbox** in well under 10 seconds — not Promotions, not Spam. Gmail's "Show original" on it confirms all three checks pass for taiwanleads.com's own sending domain directly (not just the earlier Zoho-forwarding test, which only validated Gmail's own auth surviving an SRS-rewritten forward and didn't exercise this domain's own records):
+
+- **SPF: PASS** (IP 23.251.234.50 — Amazon SES infrastructure behind Resend)
+- **DKIM: PASS** (domain taiwanleads.com, selector `resend`)
+- **DMARC: PASS** (`p=NONE sp=NONE dis=NONE`, `header.from=taiwanleads.com`)
+
+This is the direct confirmation the 2026-09-06 DMARC-record entry said would need a few days of domain reputation to build before it could be checked — it's now checked, on a real signup flow, with a clean result.
+
+**Left as-is, not cleaned up:** the `verymeanguy13+resendtest0909@gmail.com` test account was created but never verified (the verification link was not clicked) — this is exactly what `.github/workflows/cleanup-unverified-signups.yml` already exists to sweep up automatically, so no manual cleanup needed.
+
+**Not checked this pass, per the reminder's own "no action needed yet" framing:** whether DMARC aggregate reports arriving at `contact@taiwanleads.com` look clean enough to consider tightening `p=none` → `p=quarantine`. That mailbox forwards to `verymeanguy11@gmail.com`, a different inbox than the one this session's browser link is signed into (`verymeanguy13@gmail.com`) — would need either a switch of Gmail account in the browser pane or the user's own look, whenever this becomes worth doing.
+
+**Modified:** nothing (verification-only entry; no code or config touched).
+
+## 2026-09-11 — Fixed live PER10004 "資料不齊全" error on first real NewebPay Period subscribe attempt
+
+First-ever live test of the NewebPay Period (信用卡定期定額) integration:
+user tried to subscribe to Plan B and NewebPay's hosted page
+(core.newebpay.com/MPG/period) rejected the request with "資料處理結果 →
+資料不齊全 → 錯誤代碼：PER10004" (data incomplete).
+
+Root cause: the outer (unencrypted) HTTP POST field carrying the merchant
+ID was named `MerchantID` in this codebase, but NewebPay's Period product
+family expects it named `MerchantID_` — **with a trailing underscore**.
+Confirmed against NewebPay's own official 信用卡定期定額技術串接手冊 PDF
+(section 4.3.1's HTML form example literally shows
+`<input name="MerchantID_" ...>`), and cross-checked against a
+third-party PHP SDK (fall1600/newebpay) whose Period-modify function
+(`alterAmt()`) independently uses the same `MerchantID_` field name. This
+is a real, documented quirk specific to the Period family — NewebPay's
+general one-time MPG checkout (used for the yearly plan) genuinely does
+use `MerchantID` with no underscore, which is why that field name looked
+right everywhere else in this codebase and in most public NewebPay
+write-ups (which mostly cover MPG, not Period). Two different NewebPay
+products, two different outer-field conventions — easy to conflate, and
+this codebase had.
+
+Fixed both places that build a Period-family request:
+- `components/NewebpayCheckoutButton.tsx`'s monthly branch (the one that
+  actually fired for this bug) — `MerchantID` → `MerchantID_` in the
+  hidden form fields posted to NewebPay.
+- `lib/newebpay-api.ts`'s `alterNewebpayPeriodStatus()` (used by
+  `/api/account/cancel` and the plan-switch route) — same fix, though
+  this endpoint hasn't been exercised against live traffic yet since no
+  cancellation has happened. Re-confirm once a real cancel/plan-switch is
+  tested end-to-end.
+
+`buildCreateMpgOrderRequest()` (yearly, one-time MPG checkout) was NOT
+touched — its `MerchantID` (no underscore) is correct for that product.
+
+Next: user needs to redeploy and retry the Plan B subscribe flow to
+confirm this actually resolves PER10004 — this fix is unverified against
+a live NewebPay call as of this writing, same standing caveat as the rest
+of this integration until a full end-to-end test (subscribe → webhook
+fires → account shows Pro) succeeds.

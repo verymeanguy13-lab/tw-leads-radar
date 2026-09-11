@@ -140,8 +140,20 @@ export default function NewebpayCheckoutButton({
           setLoading(false);
           return;
         }
+        // 2026-09-11 fix: NewebPay's Period (定期定額) product family posts
+        // the merchant-ID field as "MerchantID_" (trailing underscore) —
+        // confirmed against NewebPay's own 信用卡定期定額技術串接手冊 PDF,
+        // section 4.3.1's own HTML form example: <input
+        // name="MerchantID_" ...>. This is DIFFERENT from the general MPG
+        // checkout below (yearly branch), which really does use
+        // "MerchantID" with no underscore — two different NewebPay
+        // products, two different outer-field conventions, easy to
+        // conflate. Sending "MerchantID" here meant NewebPay's /MPG/period
+        // endpoint never found a merchant ID at all, which is exactly what
+        // produced the live PER10004 "資料不齊全" error on the first real
+        // Plan B subscribe attempt (2026-09-11).
         buildFormAndSubmit(data.url, {
-          MerchantID: data.merchantId,
+          MerchantID_: data.merchantId,
           PostData_: data.postData,
         });
       } else {

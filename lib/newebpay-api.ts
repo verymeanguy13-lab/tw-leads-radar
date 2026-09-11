@@ -321,10 +321,22 @@ export async function alterNewebpayPeriodStatus(
   };
   const postData = encryptPostData(fields);
 
+  // 2026-09-11 fix: matches the same fix in NewebpayCheckoutButton.tsx —
+  // NewebPay's Period (定期定額) endpoints expect the outer merchant-ID
+  // field named "MerchantID_" (trailing underscore), confirmed against
+  // NewebPay's own 信用卡定期定額技術串接手冊 PDF (section 4.3.1's HTML
+  // form example uses name="MerchantID_"). This was previously sent as
+  // "MerchantID" (no underscore, matching the unrelated general-MPG
+  // convention) — same class of bug that caused the live PER10004
+  // "資料不齊全" error on order creation, just never yet exercised here
+  // since no cancellation has hit production traffic. Still UNVERIFIED
+  // against a live call to this specific endpoint (only order creation
+  // has actually been tested against a real NewebPay account so far) —
+  // re-confirm once a real cancel is tested end-to-end.
   const res = await fetch(`${NEWEBPAY_BASE_URL}${PERIOD_ALTER_STATUS_PATH}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ MerchantID: merchantId, PostData_: postData }).toString(),
+    body: new URLSearchParams({ MerchantID_: merchantId, PostData_: postData }).toString(),
   });
 
   if (!res.ok) {
