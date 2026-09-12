@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { decryptTradeInfo, computeTradeSha, alterNewebpayPeriodStatus } from "@/lib/newebpay-api";
+import { decryptTradeInfo, alterNewebpayPeriodStatus } from "@/lib/newebpay-api";
 
 // 2026-09-04 — 藍新 (NewebPay) NotifyURL handler for 信用卡定期定額
 // (recurring credit card) charges. Mirrors app/api/webhooks/paddle/
@@ -8,38 +8,63 @@ import { decryptTradeInfo, computeTradeSha, alterNewebpayPeriodStatus } from "@/
 // subscription state" pattern app/api/account/cancel/route.ts already
 // documents and relies on.
 //
-// **UNVERIFIED, READ BEFORE TRUSTING THIS IN PRODUCTION:** the envelope
-// this expects (MerchantID + TradeInfo + TradeSha form fields) is
-// NewebPay's well-documented convention for their general MPG (幕前支付)
-// checkout notify — confirmed against multiple independent third-party
-// integration writeups. It is NOT confirmed specifically for the Period
-// (定期定額) API's NotifyURL — the field-level spec this session pulled
-// (architecture.md, 2026-09-04) lists the *inner* result fields
-// (Status, PeriodNo, TradeNo, etc.) but never states the outer wrapper
-// field name for Period specifically, and the official PDF (current
-// version NDNP-1.0.6) could not be fetched to confirm either way. If
-// real test notifications don't parse, this envelope assumption — not
-// the inner field names below — is the first thing to check.
+// 2026-09-12 fix: the envelope this originally expected (MerchantID +
+// TradeInfo + TradeSha form fields) turned out to be NewebPay's general
+// MPG (幕前支付) checkout notify convention — correct for the *yearly*
+// one-time checkout's webhook (app/api/webhooks/newebpay-mpg/route.ts),
+// but WRONG for Period. Confirmed against NewebPay's own official
+// 信用卡定期定額技術串接手冊 PDF: Period's NotifyURL POSTs a single form
+// field literally named "Period" (AES-256-CBC encrypted, same HashKey/
+// HashIV as PostData_) — no separate TradeInfo/TradeSha/MerchantID
+// fields alongside it at all. Because this handler was checking for
+// fields that never arrive, it 400'd on every real Period notify before
+// ever reaching the decrypt/DB-update logic below — confirmed live
+// 2026-09-12 when a real Plan B subscribe payment never updated the
+// user's account. This was the exact risk this file's own previous
+// comment flagged ("if real test notifications don't parse, this
+// envelope assumption is the first thing to check") — it was.
 //
+// Also fixed in the same pass: the decrypted payload's shape is
+// `{ Status, Message, Result: { MerchantID, MerchantOrderNo, PeriodNo,
+// ... } }` per the same manual — Status lives on the OUTER object, not
+// inside Result. The previous code checked `result.Status` where
+// `result` was already unwrapped to `.Result`, so that check was
+// silently always false (Result has no Status field) and a declined/
+// failed charge would have been treated as success. Fixed by checking
+// the envelope's own Status first, falling back to the unwrapped
+// object's in case a future/other NewebPay flow returns it flat.
+//
+// There's no separate outer MerchantID field to check against
+// process.env.NEWEBPAY_MERCHANT_ID for Period (unlike MPG) — the only
+// thing NewebPay sends is the single encrypted field, so the MerchantID
+// check now happens against the *decrypted* value instead. Successful
+// AES decryption + JSON.parse with our own HashKey/HashIV is itself
+// already strong evidence this came from NewebPay (a forged payload
+// encrypted with the wrong key would not decrypt to valid JSON), and the
+// MerchantID cross-check below is belt-and-suspenders on top of that.
+interface PeriodNotifyResult {
+  MerchantID?: string;
+  MerchantOrderNo?: string;
+  PeriodNo?: string;
+  TradeNo?: string;
+  AuthDate?: string;
+  AuthAmt?: number;
+  TotalTimes?: number;
+  AlreadyTimes?: number;
+  NextAuthDate?: string;
+}
+
+interface PeriodNotifyEnvelope {
+  Status?: string;
+  Message?: string;
+  Result?: PeriodNotifyResult;
+}
+
 // Also unbuilt: nothing yet inserts into newebpay_pending_orders (see
 // db/schema.sql) at checkout-initiation time, since no checkout route
 // calling lib/newebpay-api.ts's buildCreatePeriodOrderRequest() exists
 // yet. This handler will find no matching row and log+no-op until that
 // exists — expected, not a bug, until that half is built.
-
-interface PeriodNotifyResult {
-  Status?: string;
-  MerchantID?: string;
-  MerchantOrderNo?: string;
-  PeriodNo?: string;
-  TradeNo?: string;
-  AuthTime?: string;
-  AuthAmt?: number;
-  DateArray?: string;
-  AlreadyTimes?: number;
-  AuthTimes?: number;
-  NextAuthDate?: string;
-}
 
 export async function POST(req: NextRequest) {
   const merchantId = process.env.NEWEBPAY_MERCHANT_ID;
@@ -49,40 +74,39 @@ export async function POST(req: NextRequest) {
   }
 
   const form = await req.formData();
-  const tradeInfo = form.get("TradeInfo");
-  const tradeSha = form.get("TradeSha");
-  const postedMerchantId = form.get("MerchantID");
+  const periodField = form.get("Period");
 
-  if (typeof tradeInfo !== "string" || typeof tradeSha !== "string") {
-    return NextResponse.json({ error: "Missing TradeInfo/TradeSha" }, { status: 400 });
+  if (typeof periodField !== "string") {
+    return NextResponse.json({ error: "Missing Period field" }, { status: 400 });
   }
-  if (postedMerchantId !== merchantId) {
-    console.error(
-      `NewebPay webhook: MerchantID mismatch (got ${String(postedMerchantId)})`
-    );
+
+  let envelope: PeriodNotifyEnvelope;
+  try {
+    const decrypted = decryptTradeInfo(periodField);
+    envelope = JSON.parse(decrypted) as PeriodNotifyEnvelope;
+  } catch (err) {
+    console.error("NewebPay webhook: failed to decrypt/parse Period field", err);
+    return NextResponse.json({ error: "Invalid Period payload" }, { status: 400 });
+  }
+
+  // Some NewebPay flows nest the actual fields under `.Result`, others
+  // return them at the top level — not confirmed which applies to Period
+  // specifically for every notify type, so check both rather than
+  // assume.
+  const result: PeriodNotifyResult = envelope.Result ?? (envelope as PeriodNotifyResult);
+
+  if (result.MerchantID && result.MerchantID !== merchantId) {
+    console.error(`NewebPay webhook: MerchantID mismatch in decrypted Period payload (got ${result.MerchantID})`);
     return NextResponse.json({ error: "Invalid MerchantID" }, { status: 401 });
   }
 
-  const expectedSha = computeTradeSha(tradeInfo);
-  if (expectedSha !== tradeSha.toUpperCase()) {
-    return NextResponse.json({ error: "Invalid TradeSha" }, { status: 401 });
-  }
-
-  let result: PeriodNotifyResult;
-  try {
-    const decrypted = decryptTradeInfo(tradeInfo);
-    const parsed = JSON.parse(decrypted);
-    // Some NewebPay flows nest the actual fields under `.Result`, others
-    // return them at the top level — not confirmed which applies to
-    // Period specifically, so check both rather than assume.
-    result = (parsed.Result ?? parsed) as PeriodNotifyResult;
-  } catch (err) {
-    console.error("NewebPay webhook: failed to decrypt/parse TradeInfo", err);
-    return NextResponse.json({ error: "Invalid TradeInfo" }, { status: 400 });
-  }
-
-  if (result.Status && result.Status !== "SUCCESS") {
-    console.error(`NewebPay webhook: non-success status ${result.Status}`);
+  // `envelope.Status` covers both shapes: when Result is nested, Status
+  // sits alongside it on the outer envelope; when a flow instead returns
+  // everything flat (no `.Result` at all), `envelope` IS `result`, so
+  // `envelope.Status` is the same field either way. No separate check on
+  // `result` is needed here.
+  if (envelope.Status && envelope.Status !== "SUCCESS") {
+    console.error(`NewebPay webhook: non-success status ${envelope.Status}`, envelope.Message ?? "");
     return NextResponse.json({ received: true }, { status: 200 });
   }
 

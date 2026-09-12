@@ -3126,3 +3126,54 @@ confirm this actually resolves PER10004 — this fix is unverified against
 a live NewebPay call as of this writing, same standing caveat as the rest
 of this integration until a full end-to-end test (subscribe → webhook
 fires → account shows Pro) succeeds.
+
+## 2026-09-12 — Second live bug found in the same test: webhook never recognized the Period notify at all
+
+Continuing from this morning's PER10004 fix: after that fix deployed, the
+user completed a real Plan B (Pro) subscribe with a real credit card —
+checkout now reached NewebPay's actual payment form and the charge went
+through on NewebPay's side. But taiwanleads.com never reflected it: the
+user was logged out on return, and after logging back in, the account
+still showed the free tier.
+
+Root cause #2: `app/api/webhooks/newebpay/route.ts` (the NotifyURL
+handler) was built expecting NewebPay's general MPG (幕前支付) checkout
+notify shape — form fields `MerchantID` + `TradeInfo` + `TradeSha`. That
+convention is correct for the yearly one-time checkout's own webhook
+(`webhooks/newebpay-mpg/route.ts`) but wrong for Period. Confirmed
+against NewebPay's own official 信用卡定期定額技術串接手冊 PDF: Period's
+NotifyURL POSTs a single form field literally named `Period` (AES-256-CBC
+encrypted, same HashKey/HashIV as PostData_) — nothing else alongside it.
+Since the handler was reading `form.get("TradeInfo")` (always null for a
+real Period notify), it 400'd immediately, before ever reaching the
+decrypt/DB-update logic — so the real successful payment never got
+recorded. This file's own prior header comment had explicitly flagged
+this exact risk ("if real test notifications don't parse, this envelope
+assumption is the first thing to check") — it was the bug.
+
+Fixed in the same pass: the decrypted payload shape is `{ Status,
+Message, Result: {...} }` with Status on the OUTER object — the previous
+code checked `result.Status` on the already-unwrapped `.Result` object,
+which has no Status field, so a declined/failed charge would have
+silently been treated as success. Also: Period's notify has no separate
+plain MerchantID field to check (unlike MPG), so the MerchantID
+cross-check now happens against the *decrypted* value instead.
+
+**Recovery for this specific stuck test order**: per how NewebPay notify
+retries work (3-5 attempts, a few minutes apart, then it gives up), by
+the time this fix lands the retry window for this morning's specific
+notify will likely have already lapsed — deploying the fix alone won't
+retroactively credit this one order. Plan: cancel this morning's
+authorization in NewebPay's back office (Sales Center → Sales Records
+Query → Credit Card Transaction Query) before the 21:00 daily settlement
+— confirmed elsewhere in this document that this means no real money
+ends up moving for it — then redeploy this fix and do one clean fresh
+subscribe test to verify both fixes together, rather than hand-editing
+the database to backfill the stuck order.
+
+Same standing caveat as the rest of this integration: `webhooks/
+newebpay-mpg/route.ts` (the yearly one-time checkout's own webhook) has
+still never been exercised against a real payment either — its
+MerchantID/TradeInfo/TradeSha envelope assumption is correct per
+independent sources for MPG specifically, but nothing here should be
+treated as trustworthy until it's actually been watched succeed once.
