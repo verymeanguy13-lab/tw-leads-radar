@@ -3368,3 +3368,59 @@ not just trust the account page's display.
 credit) payment to fully close this out, given the cost/reversibility
 tradeoff discussed with the user (see session handoff for full
 reasoning) — parked pending the user's decision.
+
+## 2026-09-12 — Second, more thorough static review pass on the yearly/MPG flow, at the user's request; caught a bug in my own bug-fix
+
+The user asked for a second, more meticulous pass over the same
+ATM/CVS/yearly area before spending any more real money testing it.
+Checked areas not covered by the first pass:
+
+- `db/schema.sql`'s Row Level Security setup on `subscriptions` and
+  `newebpay_pending_orders`. Initially looked concerning (a policy
+  comment claims `db()` is "the non-RLS connection," but `lib/db.ts`
+  shows `db()` and `withUserContext()` use the identical underlying
+  connection — the only difference is whether `app.current_user_id` is
+  set first). Resolved by evidence, not further guessing: the sibling
+  Period webhook uses this exact same `db()`-without-context pattern to
+  INSERT into `subscriptions`, and that INSERT already succeeded for a
+  real live payment this session (see the entry above) — so whatever the
+  underlying mechanism actually is, it's proven to work for this exact
+  code shape. Not a new risk for the MPG webhook, which uses the
+  identical pattern.
+- `app/api/account/route.ts` and `AccountPageClient.tsx`: confirmed the
+  `newebpay_merchant_order_no`-without-`newebpay_period_no` branch
+  (`processor: "newebpay_yearly"`, `autoRenew: false`) is wired correctly
+  and displays the right thing (expiry date, no cancel/switch-plan
+  buttons). Noted, not fixed (cosmetic-only): the `?newebpay=return`
+  query param the bounce route attaches is never actually read by
+  `AccountPageClient.tsx` — the account page always re-fetches fresh
+  from `/api/account` on load regardless, so this doesn't affect
+  correctness, it just means no "thanks for your payment" banner shows
+  differently than a plain page visit would. Not worth fixing now.
+
+**Caught in my own previous fix**: the `Amt` defense-in-depth check added
+in the prior pass used strict `!==` between `result.Amt` and
+`TIER_PRICING[tier].yearly`. NewebPay's actual JSON encoding of `Amt`
+(string vs. number) has never been confirmed against a real payload — if
+it turns out to be a string (`"6000"`), strict inequality against the
+numeric `6000` would have made this check fire on EVERY genuine
+successful payment, rejecting it outright. That would have been strictly
+worse than not having the check at all: a self-inflicted bug that blocks
+real paying customers, introduced by a defense-in-depth measure meant to
+protect them. Fixed by comparing `Number(result.Amt)` against the
+expected number on both sides, with a `Number.isNaN` guard so a missing/
+unparseable `Amt` still safely skips the check rather than false-
+positiving against 0.
+
+Net result of both passes: two real bugs fixed before any money was
+risked on testing them (the BARCODE/unactivated-service error, and the
+Status-check bug ported over from the Period webhook's known-fixed
+pattern), plus one self-caught near-miss in the fix itself. Still
+genuinely unverified end-to-end: no real ATM transfer, 超商代碼/ibon
+payment, or yearly credit-card payment has been completed against this
+flow. Static review has now gone about as far as it usefully can — the
+remaining unknowns (does NewebPay's real payload match every field name/
+shape assumed here; does the webhook actually fire and get processed
+correctly) can only be resolved by an actual live payment attempt, which
+is the user's call given the cost/reversibility tradeoff already
+discussed.

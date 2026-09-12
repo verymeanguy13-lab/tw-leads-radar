@@ -169,11 +169,21 @@ export async function POST(req: NextRequest) {
     // that somehow got this far, a future pricing-map edit that forgot
     // this table) and this should NOT silently grant access. Logs and
     // refuses rather than guessing which one to trust.
+    //
+    // Number(...) on both sides deliberately, not a strict `!==` on the
+    // raw values: NewebPay's own JSON encoding for Amt (string vs.
+    // number) has never been confirmed by a real payload, and comparing
+    // "6000" !== 6000 with strict inequality would treat every genuine
+    // successful payment as a mismatch and reject it - the opposite of
+    // this check's purpose. Number(undefined) is NaN, so a missing Amt
+    // still safely falls through to skip the check via the isNaN guard
+    // rather than false-positive against 0.
     const expectedAmt =
       pending.tier === "pro" || pending.tier === "business"
         ? TIER_PRICING[pending.tier].yearly
         : undefined;
-    if (expectedAmt !== undefined && result.Amt !== undefined && result.Amt !== expectedAmt) {
+    const actualAmt = Number(result.Amt);
+    if (expectedAmt !== undefined && !Number.isNaN(actualAmt) && actualAmt !== expectedAmt) {
       console.error(
         `NewebPay MPG webhook: Amt mismatch for ${merchantOrderNo} - got ${result.Amt}, expected ${expectedAmt} for tier ${pending.tier}. Refusing to grant access; investigate before manually resolving.`
       );
