@@ -180,24 +180,29 @@ const MPG_CHECKOUT_PATH = "/MPG/mpg_gateway";
  * shipped in this file for the Period API - same convention, real
  * cross-validation, not a coincidence. The payment-method flags
  * (CREDIT/WEBATM/VACC/CVS/BARCODE) are confirmed present and named
- * this way across sources; which of VACC vs WEBATM vs CVS vs BARCODE
- * Taiwanese payers intuitively call "ATM" was not independently
- * confirmed - VACC (a virtual account number to transfer to, matching
- * "ATM轉帳"/"ATM 3568388" that most Taiwanese SaaS/course sites market
- * as their no-card option) is enabled here alongside CVS (超商代碼) and
- * BARCODE (條碼繳費) so the customer sees every non-card option
- * NewebPay's own hosted page supports for this order, not just one.
- * CREDIT stays enabled too, so someone who prefers a card for the
- * annual plan still can.
+ * this way across sources.
+ *
+ * 2026-09-12 fix: first real live yearly/MPG attempt failed outright
+ * with NewebPay's own error page ("條碼繳費服務未啟用，請洽客服中心" —
+ * barcode payment service not activated). Root cause: this function was
+ * unconditionally sending BARCODE: 1, but 條碼繳費 was never actually
+ * activated on the merchant account (confirmed directly against the
+ * NewebPay 商店後台's own 支付方式 status table). CREDIT (信用卡一次付清),
+ * VACC (ATM轉帳), and CVS (超商代碼繳費) are all confirmed 啟用 on that
+ * same table, so those three stay. BARCODE removed entirely rather than
+ * set to 0, to match the "only send flags for what's actually offered"
+ * reading of the spec. If 條碼繳費 gets activated later, re-add
+ * `BARCODE: 1` here.
  *
  * Same standing caveat as every other function in this file: UNVERIFIED
- * against NewebPay's authoritative spec or a real/sandbox account.
- * Payment-method selection, ATM virtual-account display, and CVS code
- * display all happen entirely on NewebPay's own hosted page after the
- * browser is redirected there (this module never sees or handles those
- * details itself) - but whether the *notify* envelope this session's
- * webhook code expects for a one-time MPG order (as opposed to a Period
- * order) is correct has never been tested end-to-end.
+ * against NewebPay's authoritative spec beyond what real live attempts
+ * have now confirmed. Payment-method selection, ATM virtual-account
+ * display, and CVS code display all happen entirely on NewebPay's own
+ * hosted page after the browser is redirected there (this module never
+ * sees or handles those details itself) - but whether the *notify*
+ * envelope this session's webhook code expects for a one-time MPG order
+ * (as opposed to a Period order) is correct has never been tested
+ * end-to-end.
  */
 export interface CreateMpgOrderParams {
   merchantOrderNo: string;
@@ -230,11 +235,11 @@ export function buildCreateMpgOrderRequest(params: CreateMpgOrderParams): {
     Email: params.payerEmail,
     LoginType: 0,
     // Payment methods offered on NewebPay's hosted page - see this
-    // function's header comment for why these four specifically.
+    // function's header comment. BARCODE deliberately omitted: 條碼繳費
+    // is not activated on the merchant account (2026-09-12).
     CREDIT: 1,
     VACC: 1,
     CVS: 1,
-    BARCODE: 1,
   };
   if (params.returnUrl) fields.ReturnURL = params.returnUrl;
   if (params.notifyUrl) fields.NotifyURL = params.notifyUrl;
