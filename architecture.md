@@ -3177,3 +3177,50 @@ still never been exercised against a real payment either — its
 MerchantID/TradeInfo/TradeSha envelope assumption is correct per
 independent sources for MPG specifically, but nothing here should be
 treated as trustworthy until it's actually been watched succeed once.
+
+## 2026-09-12 — Third bug found: NewebPay's cross-site Form Post ReturnURL was dropping the session cookie ("logged out" on return)
+
+Same debugging session, third issue: on both real subscribe attempts
+today, the user was found "logged out" of taiwanleads.com immediately
+after being sent back from NewebPay's hosted checkout page.
+
+Root cause: confirmed against NewebPay's own official manual that
+Period's (and by the same documented convention, MPG's) ReturnURL comes
+back to the browser via a cross-site HTML "Form Post" ("以 Form Post 方式
+導回商店頁"), not a plain GET redirect. All three NewebPay checkout-
+initiation routes (monthly Period, yearly MPG, plan-switch) pointed
+ReturnURL directly at `/account` — a page whose rendering depends on
+reading the NextAuth session. NextAuth's session cookie defaults to
+SameSite=Lax (nothing in lib/auth.ts overrides this), and per standard
+browser cookie behavior, a SameSite=Lax cookie is attached to a cross-
+site top-level GET navigation but NOT to a cross-site POST. Since
+NewebPay's return is a cross-site POST, the session cookie never reached
+the server on that request — the account page rendered exactly as if no
+one were logged in.
+
+Fix: added `app/api/checkout/newebpay/return/route.ts`, a small bounce
+endpoint that accepts NewebPay's POST (or GET, defensively) and
+immediately issues its own 303 redirect to `/account?newebpay=<dest>`.
+That second navigation is a normal GET issued by our own server — not a
+cross-site request from NewebPay — so the SameSite=Lax cookie IS attached
+to it. This "redirect through a same-site bounce" pattern is the standard
+fix for a third-party POST-back landing on a page that needs an auth
+cookie (the same class of issue OAuth callback handlers often hit). All
+three checkout routes' `returnUrl` now point at this shared bounce route
+with a `dest` query param (`return` for monthly/yearly, `switch-return`
+for plan-switch) instead of `/account` directly.
+
+Not yet confirmed live: the yearly/MPG path specifically — only the
+monthly Period flow has actually been exercised against a real payment so
+far. Fixed proactively on the assumption that MPG's ReturnURL follows the
+same Form-Post convention as Period (both come from the same official
+manual family), rather than waiting to rediscover the identical bug when
+yearly is eventually tested.
+
+This was found and fixed in the same session as the PER10004 (MerchantID_
+underscore) and webhook-field-name (Period vs TradeInfo/TradeSha) fixes
+above — three separate, real bugs, each only surfaced by actually running
+a live payment through this integration. Underscores why this whole
+integration should be treated as unverified end-to-end until a full
+subscribe → webhook → account-shows-Pro cycle has actually been watched
+succeed once, which as of this writing still hasn't happened.

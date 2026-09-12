@@ -106,7 +106,14 @@ export async function POST(req: Request) {
       amt,
       itemDesc: `${TIER_LABELS[tier]} (Yearly, one-time)`,
       payerEmail: session.user.email,
-      returnUrl: `${process.env.NEXTAUTH_URL}/account?newebpay=return`,
+      // 2026-09-12 fix: same "logged out on return" fix as the monthly
+      // Period checkout route — see app/api/checkout/newebpay/return/
+      // route.ts's header comment. Not yet confirmed this yearly/MPG path
+      // has the same Form-Post-back behavior (only the monthly Period
+      // flow has actually been tested live so far), but MPG follows the
+      // same general NewebPay convention, so fixing it here proactively
+      // rather than waiting to rediscover the identical bug later.
+      returnUrl: `${process.env.NEXTAUTH_URL}/api/checkout/newebpay/return?dest=return`,
       notifyUrl: `${process.env.NEXTAUTH_URL}/api/webhooks/newebpay-mpg`,
       clientBackUrl: `${process.env.NEXTAUTH_URL}/pricing`,
     });

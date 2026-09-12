@@ -162,7 +162,10 @@ export async function POST(req: Request) {
       periodTimes,
       payerEmail: session.user.email,
       prodDesc: `${TIER_LABELS[targetTier]} (Plan Switch)`,
-      returnUrl: `${process.env.NEXTAUTH_URL}/account?newebpay=switch-return`,
+      // 2026-09-12 fix: same "logged out on return" fix as the monthly
+      // Period checkout route — see app/api/checkout/newebpay/return/
+      // route.ts's header comment.
+      returnUrl: `${process.env.NEXTAUTH_URL}/api/checkout/newebpay/return?dest=switch-return`,
       notifyUrl: `${process.env.NEXTAUTH_URL}/api/webhooks/newebpay`,
     });
   } catch (err) {

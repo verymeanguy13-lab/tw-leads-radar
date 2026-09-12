@@ -168,7 +168,12 @@ export async function POST(req: Request) {
       periodTimes,
       payerEmail: session.user.email,
       prodDesc: `${TIER_LABELS[tier]} (Monthly)`,
-      returnUrl: `${process.env.NEXTAUTH_URL}/account?newebpay=return`,
+      // 2026-09-12 fix: points at a redirect-bounce route instead of
+      // /account directly — see that route's own header comment for why
+      // (NewebPay's ReturnURL is a cross-site Form Post, which drops the
+      // SameSite=Lax session cookie; a same-site server redirect from the
+      // bounce route restores it before the browser reaches /account).
+      returnUrl: `${process.env.NEXTAUTH_URL}/api/checkout/newebpay/return?dest=return`,
       notifyUrl: `${process.env.NEXTAUTH_URL}/api/webhooks/newebpay`,
     });
   } catch (err) {
