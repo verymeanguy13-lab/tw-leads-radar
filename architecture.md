@@ -3282,3 +3282,89 @@ exercising the code against production), the plan-switch path
 specifically remains completely unverified end-to-end and should be
 expected to have its own undiscovered issues whenever it's first
 actually tested with a real plan-switch attempt.
+
+## 2026-09-12 — Fifth bug found live: yearly/MPG checkout offered an unactivated payment method (BARCODE); sixth found by static review before spending real money to confirm it
+
+Continuing the same live-fire testing session (see the four bugs above),
+this covers the **first-ever real attempt at the yearly/MPG one-time
+checkout flow** (`app/api/checkout/newebpay-yearly/route.ts`) — a
+genuinely different NewebPay product from the monthly Period flow tested
+above, using the general MPG checkout API instead.
+
+**Bug #5 (live):** first real yearly checkout attempt (方案B, NT$6,000)
+failed outright with NewebPay's own error page: "條碼繳費服務未啟用，請洽
+客服中心" (barcode payment service not activated). Root cause:
+`buildCreateMpgOrderRequest()` in `lib/newebpay-api.ts` was
+unconditionally sending `BARCODE: 1` alongside `CREDIT`/`VACC`/`CVS`,
+but 條碼繳費 was never actually activated on the merchant account.
+Confirmed directly against the NewebPay 商店後台's own 支付方式 status
+table: 信用卡一次付清 / ATM轉帳 / 超商代碼繳費 all show 啟用; 條碼繳費 shows
+未啟用. Fixed by removing `BARCODE: 1` from the request entirely (not
+setting it to 0 — omitted, matching "only send flags for what's actually
+offered"). If 條碼繳費 is activated later, re-add it.
+
+Retested live after the fix: checkout now correctly reaches NewebPay's
+hosted page offering only ATM transfer and 超商代碼/ibon (no barcode
+error) — confirmed the immediate order-creation half works. Actual
+payment was NOT completed at this point (see below).
+
+**Bug #6 (static review, not yet live-confirmed):** rather than spend
+another real NT$6,000 to test the notify/webhook side (ATM transfer and
+超商代碼/ibon aren't instant like a card — no confirmed easy self-service
+reversal the way credit card's 取消授權 offers, so a second live test
+would risk being real, non-refundable revenue), did a meticulous static
+review of the yearly/MPG checkout + webhook + client code instead,
+cross-checking `app/api/webhooks/newebpay-mpg/route.ts` against
+NewebPay's own manual, a Laravel NewebPay integration package, a
+real-world integration blog, and — most usefully — this session's own
+already-fixed, already-proven-working Period webhook.
+
+Found: `app/api/webhooks/newebpay-mpg/route.ts` had the EXACT SAME
+"Status checked on the wrong object" bug that bug #2 (above) already
+fixed in the sibling Period webhook, never ported over to this route.
+NewebPay's decrypted notify payload is `{Status, Message, Result: {...}}`
+— Status lives on the OUTER object, not inside `Result`. The MPG webhook
+was unwrapping to `.Result` first and then checking `result.Status`,
+which is always `undefined` post-unwrap — so the "reject non-success"
+check was silently always false, meaning a declined/failed MPG payment
+(most relevant to yearly's credit-card option; ATM/CVS notifies are
+believed to only ever fire on final success, never on decline) would
+have been treated as a success and granted the subscription without a
+completed payment. Fixed to check `envelope.Status` before unwrapping,
+matching the Period webhook's fix.
+
+Also added, as cheap defense-in-depth (not a security requirement —
+TradeSha already proves NewebPay authored the payload): a check that the
+notify's `Amt` matches `TIER_PRICING[tier].yearly` for the pending
+order's own tier before granting access. Refuses (400, logs) rather than
+guessing if they ever disagree.
+
+Cross-referenced sources confirming the outer envelope
+(MerchantID/TradeInfo/TradeSha/Version) and inner field names
+(MerchantOrderNo/TradeNo/Amt/PaymentType/PayTime nested under `Result`):
+NewebPay's own MPG manual (direct download link expired — this session
+could not fetch NewebPay's own current PDF, same recurring blocker as
+before), a mirrored Spgateway/NewebPay MPG manual hosted by a government
+agency (matsuh.gov.tw — Spgateway was NewebPay's former brand name,
+same underlying product), the `depresto/newebpay-mpg-sdk` GitHub
+project's README (shows the same field names used in real parsing
+code), and `ycs77/laravel-newebpay`'s PHP result-object API (confirms
+NotifyURL fires only on the final settled outcome, not at ATM/CVS
+take-number/code-issuance time — consistent with this app's webhook
+never needing to handle an interim "code issued, not yet paid" state).
+
+**Still not verified end-to-end live**: no real ATM transfer or 超商代碼/
+ibon payment has actually been completed against this flow yet, so the
+webhook's real-world behavior remains unconfirmed despite the static
+review above. Also still completely untested: the yearly plan's
+credit-card option through MPG (CREDIT is enabled and would go through
+this same webhook, but no live credit-card attempt has been made on the
+yearly flow specifically — only ATM/CVS were exercised, and no payment
+was completed for either). Next real test of this flow should watch
+Vercel's logs for the webhook exactly as done for the Period flow above,
+not just trust the account page's display.
+
+**Not yet decided:** whether to go ahead and complete a real ATM/CVS (or
+credit) payment to fully close this out, given the cost/reversibility
+tradeoff discussed with the user (see session handoff for full
+reasoning) — parked pending the user's decision.

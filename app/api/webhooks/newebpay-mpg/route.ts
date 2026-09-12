@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { decryptTradeInfo, computeTradeSha } from "@/lib/newebpay-api";
+import { TIER_PRICING } from "@/lib/tiers";
 
 // 2026-09-05 — 藍新 (NewebPay) NotifyURL handler for the general one-time
 // checkout (幕前支付/MPG), used only by the yearly-plan flow
@@ -19,12 +20,32 @@ import { decryptTradeInfo, computeTradeSha } from "@/lib/newebpay-api";
 // integration writeups," except here it actually applies directly
 // (that route borrowed the assumption from this exact convention for a
 // different product, Period, where it wasn't confirmed to carry over).
-// What's NOT verified here: the exact inner result field names for a
-// one-time MPG order specifically (Status/MerchantOrderNo/TradeNo/Amt/
-// PaymentType assumed from the same sources lib/newebpay-api.ts's
-// buildCreateMpgOrderRequest() cites), and this has never been tested
-// against a real or sandbox NewebPay account - do not trust it against
-// real traffic without that test first.
+// The inner result field names (MerchantOrderNo/TradeNo/Amt/PaymentType/
+// PayTime) are now independently cross-checked (2026-09-12, before any
+// real ATM/CVS payment was completed - see architecture.md) against
+// NewebPay's own manual, a Laravel NewebPay package's field usage, and
+// a real-world integration blog showing `data["Result"]["MerchantOrderNo"]`
+// - consistent with the `{Status, Message, Result: {...}}` envelope
+// shape NewebPay uses company-wide (also seen in alterNewebpayPeriodStatus()'s
+// decrypted response). Still never tested against a real or sandbox
+// NewebPay account end-to-end - do not trust this against real traffic
+// without that test first.
+//
+// 2026-09-12 fix: found by static review (before spending real money to
+// discover it live) - this handler had the EXACT SAME "Status checked
+// on the wrong object" bug that was found and fixed in the sibling
+// Period webhook the same day. Status lives on the OUTER decrypted
+// envelope, not inside Result - checking `result.Status` after already
+// unwrapping to `.Result` meant the check was silently always false,
+// so a declined/failed MPG payment (most relevant for the yearly plan's
+// credit-card option; ATM/CVS notifies are only believed to fire on
+// final success at all) would have been treated as a success and
+// granted the subscription without a completed payment. Fixed to check
+// the envelope's own Status first, matching the Period webhook's fix.
+// Also added an Amt cross-check against TIER_PRICING as cheap
+// defense-in-depth - not required for security (TradeSha already proves
+// NewebPay authored the payload) but guards against granting the wrong
+// tier if Amt and the pending order's tier were ever to disagree.
 //
 // Unlike the Period webhook, a claimed order here needs no "recurring
 // vs first charge" branch - there is no recurring commitment, so every
@@ -37,13 +58,18 @@ import { decryptTradeInfo, computeTradeSha } from "@/lib/newebpay-api";
 // for how that's surfaced.
 
 interface MpgNotifyResult {
-  Status?: string;
   MerchantID?: string;
   MerchantOrderNo?: string;
   TradeNo?: string;
   Amt?: number;
   PaymentType?: string;
   PayTime?: string;
+}
+
+interface MpgNotifyEnvelope {
+  Status?: string;
+  Message?: string;
+  Result?: MpgNotifyResult;
 }
 
 // Plan durations are a flat 365 days from successful payment, not a
@@ -79,20 +105,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid TradeSha" }, { status: 401 });
   }
 
-  let result: MpgNotifyResult;
+  let envelope: MpgNotifyEnvelope;
   try {
     const decrypted = decryptTradeInfo(tradeInfo);
-    const parsed = JSON.parse(decrypted);
-    // Same defensive "check both" pattern as the Period webhook - not
-    // confirmed which shape a one-time MPG notify actually uses either.
-    result = (parsed.Result ?? parsed) as MpgNotifyResult;
+    envelope = JSON.parse(decrypted) as MpgNotifyEnvelope;
   } catch (err) {
     console.error("NewebPay MPG webhook: failed to decrypt/parse TradeInfo", err);
     return NextResponse.json({ error: "Invalid TradeInfo" }, { status: 400 });
   }
 
-  if (result.Status && result.Status !== "SUCCESS") {
-    console.error(`NewebPay MPG webhook: non-success status ${result.Status}`);
+  // `envelope.Status` covers both the nested-Result shape (the confirmed
+  // real one) and a hypothetical flat shape (no `.Result` at all, in
+  // which case `envelope` IS `result` and this is the same field) -
+  // matching the Period webhook's already-fixed pattern. See this file's
+  // 2026-09-12 header comment for why checking `result.Status` instead
+  // (the pre-fix version) was a real bug, not just style.
+  const result: MpgNotifyResult = envelope.Result ?? (envelope as MpgNotifyResult);
+
+  if (envelope.Status && envelope.Status !== "SUCCESS") {
+    console.error(
+      `NewebPay MPG webhook: non-success status ${envelope.Status}`,
+      envelope.Message ?? ""
+    );
     return NextResponse.json({ received: true }, { status: 200 });
   }
 
@@ -126,6 +160,24 @@ export async function POST(req: NextRequest) {
         `NewebPay MPG webhook: no unclaimed pending order for ${merchantOrderNo} - likely a duplicate notify`
       );
       return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    // 2026-09-12: cheap defense-in-depth, not a security requirement
+    // (TradeSha already proves NewebPay authored this payload) - but if
+    // Amt and the pending order's own tier ever disagree, that's a sign
+    // something is wrong (stale pricing, a tampered client-side amount
+    // that somehow got this far, a future pricing-map edit that forgot
+    // this table) and this should NOT silently grant access. Logs and
+    // refuses rather than guessing which one to trust.
+    const expectedAmt =
+      pending.tier === "pro" || pending.tier === "business"
+        ? TIER_PRICING[pending.tier].yearly
+        : undefined;
+    if (expectedAmt !== undefined && result.Amt !== undefined && result.Amt !== expectedAmt) {
+      console.error(
+        `NewebPay MPG webhook: Amt mismatch for ${merchantOrderNo} - got ${result.Amt}, expected ${expectedAmt} for tier ${pending.tier}. Refusing to grant access; investigate before manually resolving.`
+      );
+      return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
     }
 
     await sql`
