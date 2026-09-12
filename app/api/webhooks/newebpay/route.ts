@@ -180,8 +180,27 @@ export async function POST(req: NextRequest) {
       // built. Flagging this now rather than letting it be a silent gap.
       if (pending.supersedes_period_no) {
         try {
+          // 2026-09-12: alterNewebpayPeriodStatus() now requires the OLD
+          // commitment's own original MerOrderNo alongside its PeriodNo
+          // (see that function's header comment) — look it up from the
+          // subscription row being superseded rather than assuming
+          // merchantOrderNo above applies (that's the NEW switch order's
+          // number, not the old commitment's).
+          const supersededRows = await sql`
+            SELECT newebpay_merchant_order_no FROM subscriptions
+            WHERE newebpay_period_no = ${pending.supersedes_period_no}
+          `;
+          const supersededMerchantOrderNo = supersededRows[0]?.newebpay_merchant_order_no as
+            | string
+            | undefined;
+          if (!supersededMerchantOrderNo) {
+            throw new Error(
+              `no newebpay_merchant_order_no found for superseded period ${pending.supersedes_period_no}`
+            );
+          }
           const alterResult = await alterNewebpayPeriodStatus(
             pending.supersedes_period_no,
+            supersededMerchantOrderNo,
             "terminate"
           );
           if (alterResult.success) {

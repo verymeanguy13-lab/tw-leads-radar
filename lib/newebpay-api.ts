@@ -254,22 +254,14 @@ export function buildCreateMpgOrderRequest(params: CreateMpgOrderParams): {
 
 const PERIOD_ALTER_STATUS_PATH = "/MPG/period/AlterStatus";
 
-// AlterType values per the most commonly documented convention across
-// independent 藍新 Period-API integration writeups (this session found no
-// authoritative confirmation, same caveat as everything else in this
-// file - see the header comment): 1 = 啟用/restart a suspended
-// commitment, 2 = 停用/temporarily suspend (skips future charges but
-// keeps the commitment alive), 3 = 終止/terminate permanently. "Cancel"
-// in this product's own account-cancellation flow means terminate, not
-// suspend - matches cancelPaddleSubscription()'s behavior (ends the
-// subscription outright, doesn't pause it).
+// 2026-09-12 fix: confirmed against NewebPay's own official 信用卡定期
+//定額技術串接手冊 PDF (section 4.4.1/4.4.2) — AlterType is NOT a numeric
+// code. It must be sent as the literal lowercase STRING "suspend" /
+// "terminate" / "restart" ("修改委託狀態，請全小寫傳入 暫停=suspend
+// 終止=terminate 啟用=restart"). Since PeriodAlterAction's own values
+// already are exactly those strings, no separate lookup table is needed
+// any more — the action is passed straight through as AlterType.
 export type PeriodAlterAction = "restart" | "suspend" | "terminate";
-
-const ALTER_TYPE: Record<PeriodAlterAction, number> = {
-  restart: 1,
-  suspend: 2,
-  terminate: 3,
-};
 
 export interface AlterPeriodStatusResult {
   success: boolean;
@@ -286,17 +278,33 @@ export interface AlterPeriodStatusResult {
  * already-authorized recurring commitment, so NewebPay's JSON response
  * comes back synchronously with no browser involvement.
  *
- * **UNVERIFIED, same caveat as the rest of this file:** this session
- * could not fetch NewebPay's authoritative current PDF (NDNP-1.0.6) or
- * test against a real/sandbox account. The request shape below (an
- * encrypted PostData_ alongside a plain MerchantID field, matching the
- * convention buildCreatePeriodOrderRequest()/NewebpayCheckoutButton.tsx
- * already use elsewhere in this codebase) and the assumed
- * {Status, Message} JSON response envelope are both modeled on that same
- * convention, not confirmed against the official spec for this specific
- * endpoint. Do not trust this against real subscriber traffic without
- * testing it against an actual NewebPay sandbox account first — nothing
- * in this codebase has been, per every other file in this integration.
+ * 2026-09-12: rewritten after the first real live cancel attempt failed
+ * ("NewebPay AlterStatus returned non-success: { success: false, status:
+ * undefined, message: undefined }" — i.e. `res.json()` didn't find what
+ * this code expected at all). Confirmed against NewebPay's official
+ * manual that THREE separate things were wrong with the previous version
+ * (which had been modeled on guesswork/convention, same as every other
+ * bug found in this file today):
+ *   1. AlterType must be the lowercase string above, not a numeric code.
+ *   2. A required field, `MerOrderNo` (the original order's merchant
+ *      order number, alongside PeriodNo), was missing entirely — this
+ *      function didn't even accept one as a parameter before.
+ *   3. The response is NOT a plain JSON body. Per the manual: the raw
+ *      HTTP response is `{"period": "<AES-encrypted hex>"}` — note
+ *      lowercase `period`, distinct from the notify webhook's
+ *      capitalized `Period` field (yes, NewebPay really does use both
+ *      casings for different things in the same product). That encrypted
+ *      value decrypts (same HashKey/HashIV as everywhere else) to
+ *      `{"Status":"SUCCESS","Message":"...","Result":{...}}` — this is
+ *      what actually needs parsing, not the raw response body directly.
+ *
+ * `merchantOrderNo` should be the ORIGINAL order's MerOrderNo that
+ * created this Period commitment (stored as `newebpay_merchant_order_no`
+ * on the `subscriptions` row) — the manual doesn't explicitly say
+ * whether a fresh/unique order number is required for the alter call
+ * itself vs. reusing the original, so this is the more conservative,
+ * best-supported reading (an identifying cross-reference alongside
+ * PeriodNo), not confirmed beyond that.
  *
  * Deliberately does NOT touch this app's own `subscriptions` table -
  * matches app/api/account/cancel/route.ts's existing Paddle-side pattern
@@ -308,6 +316,7 @@ export interface AlterPeriodStatusResult {
  */
 export async function alterNewebpayPeriodStatus(
   periodNo: string,
+  merchantOrderNo: string,
   action: PeriodAlterAction
 ): Promise<AlterPeriodStatusResult> {
   const merchantId = requireEnv("NEWEBPAY_MERCHANT_ID");
@@ -316,23 +325,16 @@ export async function alterNewebpayPeriodStatus(
     RespondType: "JSON",
     Version: "1.0",
     TimeStamp: Math.floor(Date.now() / 1000),
+    MerOrderNo: merchantOrderNo,
     PeriodNo: periodNo,
-    AlterType: ALTER_TYPE[action],
+    AlterType: action,
   };
   const postData = encryptPostData(fields);
 
-  // 2026-09-11 fix: matches the same fix in NewebpayCheckoutButton.tsx —
-  // NewebPay's Period (定期定額) endpoints expect the outer merchant-ID
-  // field named "MerchantID_" (trailing underscore), confirmed against
-  // NewebPay's own 信用卡定期定額技術串接手冊 PDF (section 4.3.1's HTML
-  // form example uses name="MerchantID_"). This was previously sent as
-  // "MerchantID" (no underscore, matching the unrelated general-MPG
-  // convention) — same class of bug that caused the live PER10004
-  // "資料不齊全" error on order creation, just never yet exercised here
-  // since no cancellation has hit production traffic. Still UNVERIFIED
-  // against a live call to this specific endpoint (only order creation
-  // has actually been tested against a real NewebPay account so far) —
-  // re-confirm once a real cancel is tested end-to-end.
+  // MerchantID_ (trailing underscore) confirmed correct for this Period-
+  // family endpoint per the same manual — this part of the previous fix
+  // (2026-09-11) was already right, only AlterType/MerOrderNo/response
+  // parsing needed correcting today.
   const res = await fetch(`${NEWEBPAY_BASE_URL}${PERIOD_ALTER_STATUS_PATH}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -343,15 +345,33 @@ export async function alterNewebpayPeriodStatus(
     throw new Error(`NewebPay AlterStatus HTTP ${res.status}`);
   }
 
-  // Response envelope for this endpoint is unconfirmed - assuming a
-  // {Status, Message} shape consistent with NewebPay's RespondType:
-  // "JSON" convention used elsewhere in this file, but not verified
-  // against a real account.
-  const json = await res.json().catch(() => null as { Status?: string; Message?: string } | null);
-  const status = json?.Status;
+  // Confirmed per NewebPay's official manual: the raw response body is
+  // `{"period": "<AES-encrypted hex>"}` (lowercase `period`) — the real
+  // {Status, Message, Result} JSON is only found after decrypting that
+  // value with the same HashKey/HashIV used everywhere else in this
+  // file. Previously this code tried to read Status/Message directly off
+  // the raw response body, which could never work since that body only
+  // ever contains the single encrypted `period` field — this was the
+  // actual cause of the live "AlterStatus returned non-success: {
+  // success: false, status: undefined, message: undefined }" failure
+  // (2026-09-12).
+  const raw = await res.json().catch(() => null as { period?: string } | null);
+  if (!raw?.period) {
+    console.error("NewebPay AlterStatus: response missing encrypted 'period' field", raw);
+    return { success: false };
+  }
+
+  let parsed: { Status?: string; Message?: string };
+  try {
+    parsed = JSON.parse(decryptTradeInfo(raw.period));
+  } catch (err) {
+    console.error("NewebPay AlterStatus: failed to decrypt/parse 'period' field", err);
+    return { success: false };
+  }
+
   return {
-    success: status === "SUCCESS",
-    status,
-    message: json?.Message,
+    success: parsed.Status === "SUCCESS",
+    status: parsed.Status,
+    message: parsed.Message,
   };
 }

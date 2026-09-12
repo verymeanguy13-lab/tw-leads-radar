@@ -106,8 +106,29 @@ export async function POST() {
     }
 
     if (sub.newebpay_period_no) {
+      // 2026-09-12: alterNewebpayPeriodStatus() now requires the original
+      // order's MerOrderNo too, per NewebPay's own spec (see that
+      // function's header comment for the full fix) — the webhook always
+      // inserts newebpay_merchant_order_no alongside newebpay_period_no
+      // in the same row (see webhooks/newebpay/route.ts's INSERT), so
+      // this should never actually be null in practice when period_no is
+      // set, but guarding explicitly rather than sending AlterStatus a
+      // blank MerOrderNo if that assumption is ever wrong.
+      if (!sub.newebpay_merchant_order_no) {
+        console.error(
+          `NewebPay cancel: subscription has newebpay_period_no (${sub.newebpay_period_no}) but no newebpay_merchant_order_no — data inconsistency, cannot safely call AlterStatus`
+        );
+        return NextResponse.json(
+          { error: "Cancellation failed — please try again or contact support" },
+          { status: 500 }
+        );
+      }
       try {
-        const result = await alterNewebpayPeriodStatus(sub.newebpay_period_no, "terminate");
+        const result = await alterNewebpayPeriodStatus(
+          sub.newebpay_period_no,
+          sub.newebpay_merchant_order_no,
+          "terminate"
+        );
         if (!result.success) {
           console.error("NewebPay AlterStatus returned non-success:", result);
           return NextResponse.json(

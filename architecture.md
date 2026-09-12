@@ -3224,3 +3224,61 @@ a live payment through this integration. Underscores why this whole
 integration should be treated as unverified end-to-end until a full
 subscribe → webhook → account-shows-Pro cycle has actually been watched
 succeed once, which as of this writing still hasn't happened.
+
+## 2026-09-12 — First real end-to-end success, then a fourth bug found in cancellation
+
+Milestone: after fixing the NEXTAUTH_URL domain mismatch (previous entry)
+and the resulting Google OAuth redirect_uri_mismatch (registering
+https://www.taiwanleads.com/api/auth/callback/google in Google Cloud
+Console), the user completed a full real Plan B subscribe end-to-end for
+the first time ever: checkout → NewebPay payment → webhook received and
+processed (200) → account correctly showed Pro. Confirmed directly from
+Vercel's live request logs, not just user-reported. This closes out the
+"nothing in this integration has been tested against a live account"
+caveat that had applied to order creation + notify since this feature was
+first built.
+
+Immediately after, testing the account-cancellation flow surfaced a
+fourth real bug, same root cause pattern as the day's first three
+(untested code built on guessed/conventional field formats): the live
+call failed with "NewebPay AlterStatus returned non-success: { success:
+false, status: undefined, message: undefined }". Checked against
+NewebPay's official manual (section 4.4.1/4.4.2) and found THREE separate
+mistakes in `alterNewebpayPeriodStatus()`:
+
+1. `AlterType` was sent as a numeric code (1/2/3) — the spec requires the
+   literal lowercase STRING "suspend"/"terminate"/"restart" ("請全小寫
+   傳入"). Since `PeriodAlterAction`'s own values already are exactly
+   those strings, the fix removed the numeric lookup table entirely and
+   passes the action straight through.
+2. A required field, `MerOrderNo` (the original order's merchant order
+   number, alongside `PeriodNo`), was missing from the request — the
+   function didn't even accept one as a parameter. Now takes
+   `merchantOrderNo` as a required second argument; both call sites
+   (`app/api/account/cancel/route.ts` and the plan-switch-supersede path
+   in `app/api/webhooks/newebpay/route.ts`) updated to look up and pass
+   the correct value from the `subscriptions` table's existing
+   `newebpay_merchant_order_no` column (for the plan-switch case
+   specifically, this has to be looked up fresh for the OLD/superseded
+   commitment, not reused from the new switch order).
+3. The response is NOT a plain JSON body, despite RespondType: "JSON" —
+   confirmed the raw HTTP response is `{"period": "<AES-encrypted
+   hex>"}` (lowercase `period` — yes, genuinely a different casing than
+   the capitalized `Period` field the separate NotifyURL webhook uses;
+   both are real, for different things, in the same NewebPay product).
+   That value decrypts with the same HashKey/HashIV to the actual
+   `{"Status":"SUCCESS","Message":"...","Result":{...}}` payload. The
+   previous code tried to read Status/Message directly off the raw
+   response, which could never have worked.
+
+`MerchantID_` (trailing underscore) on the outer request, fixed
+yesterday, was independently reconfirmed correct for this endpoint too.
+
+Not yet re-tested live as of this writing — this fix needs to be
+deployed and a real cancel attempted again to confirm all three
+corrections together actually work. Given today's pattern (four
+consecutive real, previously-invisible bugs, each only found by actually
+exercising the code against production), the plan-switch path
+specifically remains completely unverified end-to-end and should be
+expected to have its own undiscovered issues whenever it's first
+actually tested with a real plan-switch attempt.
