@@ -50,8 +50,19 @@ export const TIER_LIMITS: Record<Tier, TierLimits> = {
 // if pricing ever changes, this map must be updated by hand too**, the
 // same kind of two-places-to-update risk this file's own 2026-08-30
 // cadence-bug comment above already warns about.
+// !!! TEMPORARY - 2026-09-12 !!! pro.yearly dropped from 6000 to 10 to
+// live-test the ATM轉帳/超商代碼(ibon) payment flow through NewebPay's MPG
+// checkout + webhook for real (app/api/checkout/newebpay-yearly/route.ts,
+// app/api/webhooks/newebpay-mpg/route.ts) without risking NT$6,000 twice.
+// The pricing page's own displayed price is a SEPARATE hardcoded string
+// (app/(marketing)/pricing/page.tsx) and was NOT changed, so there is a
+// real mismatch while this is in place: the page still shows "NT$6,000"
+// but checkout only charges NT$10. MUST BE REVERTED to 6000 immediately
+// after the test is confirmed working - do not leave this in place. See
+// architecture.md's 2026-09-12 entry for when this was set and confirm
+// it was reverted before trusting this file's history further.
 export const TIER_PRICING: Record<"pro" | "business", Record<"monthly" | "yearly", number>> = {
-  pro: { monthly: 600, yearly: 6000 },
+  pro: { monthly: 600, yearly: 10 },
   business: { monthly: 1300, yearly: 13000 },
 };
 
